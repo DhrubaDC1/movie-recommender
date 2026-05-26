@@ -280,3 +280,63 @@ Lesson: name your env file exactly `.env` if you want python-dotenv to find it a
 
 ---
 
+## 2026-05-26 — Day 1 (late evening)
+
+### 18:30 — Hotfix: 264 "Failed to fetch" errors on results page (PR merged to main)
+
+Opened the event logs and found 264 `recommendations_error` entries, all with `"Failed to fetch"`. Four errors had identical timestamps (12:03:35.892Z × 4) — a clear sign of multiple simultaneous requests, not a network problem.
+
+**Root cause** — a React referential stability bug in `frontend/app/results/page.tsx`:
+
+```typescript
+// These create new array references on every render:
+const liked = searchParams.getAll("liked");
+const disliked = searchParams.getAll("disliked");
+
+const fetchRecs = useCallback(async (...) => {
+  ...
+}, [liked, disliked, sessionId]); // deps always "changed" → recreated every render
+
+useEffect(() => {
+  fetchRecs(); // re-fired on every render
+}, [fetchRecs]); // caught the recreation → fired again
+```
+
+`searchParams.getAll()` returns a new `string[]` instance on every call, even when the values are identical. React's `useCallback` uses `Object.is` comparison — two different array objects are never equal — so `fetchRecs` was recreated on every render. The `useEffect` caught that and re-fired `fetchRecs()`, which aborted the previous in-flight fetch, which the browser reported as `"Failed to fetch"`.
+
+**Fix — three changes:**
+
+1. **`useMemo` on the arrays** — stable reference as long as `searchParams` doesn't change:
+   ```typescript
+   const liked = useMemo(() => searchParams.getAll("liked"), [searchParams]);
+   const disliked = useMemo(() => searchParams.getAll("disliked"), [searchParams]);
+   ```
+
+2. **`fetchInitiatedRef` mount guard** — even in edge cases (StrictMode double-invoke, hot reload), the initial fetch runs exactly once:
+   ```typescript
+   const fetchInitiatedRef = useRef(false);
+   useEffect(() => {
+     if (fetchInitiatedRef.current) return;
+     fetchInitiatedRef.current = true;
+     const controller = new AbortController();
+     fetchRecs([], [], controller.signal);
+     return () => controller.abort();
+   }, [fetchRecs]);
+   ```
+
+3. **`AbortController` threaded through** — so navigating away mid-fetch aborts cleanly, and the `AbortError` is silently swallowed (not logged as a real error):
+   ```typescript
+   catch (e: unknown) {
+     if (e instanceof Error && e.name === "AbortError") return;
+     // ... real error handling
+   }
+   ```
+
+Also forwarded `signal` to `getRecommendations` in `lib/api.ts` so it reaches the actual `fetch()` call.
+
+**Result**: Exactly one POST `/recommend` per page load. Error events in the DB: zero for normal loads. Rediscovery (user-triggered) unchanged.
+
+Lesson: `searchParams.getAll()` is a call that allocates a new array every time. Never put it raw into `useCallback` deps — always memoize first.
+
+---
+
