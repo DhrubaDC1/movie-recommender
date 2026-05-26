@@ -152,11 +152,13 @@ async def recommend(
     all_liked = req.liked + extra_liked
     all_disliked = req.disliked + extra_disliked
 
+    # Include language preference in the query so the embedding biases toward those films.
+    lang_prefix = f"{'/'.join(req.languages)} language " if req.languages else ""
     query_text = (
-        f"Movies similar to: {', '.join(all_liked)}. "
+        f"{lang_prefix}Movies similar to: {', '.join(all_liked)}. "
         f"Avoiding themes from: {', '.join(all_disliked)}."
         if all_disliked
-        else f"Movies similar to: {', '.join(all_liked)}."
+        else f"{lang_prefix}Movies similar to: {', '.join(all_liked)}."
     )
 
     t0 = time.monotonic()
@@ -164,7 +166,9 @@ async def recommend(
     embed_ms = int((time.monotonic() - t0) * 1000)
 
     t0 = time.monotonic()
-    n_candidates = req.num_results * 2
+    # Fetch a larger pool when language filtering is active so minority-language
+    # films have a realistic chance of appearing after the soft-sort.
+    n_candidates = req.num_results * (4 if req.languages else 2)
     candidates = vector_store.query(embedding, n_results=n_candidates)
     vector_ms = int((time.monotonic() - t0) * 1000)
 
