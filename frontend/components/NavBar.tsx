@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import AuthModal from "./AuthModal";
 
@@ -14,6 +16,8 @@ export default function NavBar({ onBack, subtitle }: Props) {
   const { user, logout, loading } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [modalTab, setModalTab] = useState<"login" | "signup">("login");
+  const pathname = usePathname();
+  const onGamePage = pathname === "/game";
 
   const openLogin = () => { setModalTab("login"); setShowModal(true); };
   const openSignup = () => { setModalTab("signup"); setShowModal(true); };
@@ -34,6 +38,22 @@ export default function NavBar({ onBack, subtitle }: Props) {
           <span className="text-xl font-bold tracking-wide text-white">Cine</span>
           <span className="text-xl font-bold tracking-wide" style={{ color: "#e50914" }}>Match</span>
         </button>
+
+        {/* CineSwipe game link — shown on non-game pages */}
+        {!onGamePage && !subtitle && (
+          <Link
+            href="/game"
+            className="hidden sm:flex items-center gap-2 text-xs font-medium transition-all duration-200 px-4 py-2 rounded-full"
+            style={{
+              background: "rgba(229,9,20,0.12)",
+              border: "1px solid rgba(229,9,20,0.25)",
+              color: "rgba(229,9,20,0.85)",
+            }}
+          >
+            <span>🎬</span>
+            <span>CineSwipe</span>
+          </Link>
+        )}
 
         {/* Subtitle (results page) */}
         {subtitle && (

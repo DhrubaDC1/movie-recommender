@@ -26,3 +26,16 @@ export interface Recommendation {
 export interface RecommendResponse {
   recommendations: Recommendation[];
 }
+
+export interface GameMovie {
+  tmdb_id: number;
+  title: string;
+  year: string;
+  genre: string;
+  vote_average: number;
+  vote_count: number;
+  original_language: string;
+  poster_url: string | null;
+  backdrop_url: string | null;
+  overview: string;
+}

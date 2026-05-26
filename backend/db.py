@@ -150,6 +150,17 @@ async def upsert_movie_feedback(
         await db.commit()
 
 
+async def get_all_rated_titles(user_id: str) -> set[str]:
+    """All movie titles the user has liked or disliked (any source, no limit)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT movie_title FROM movie_feedback WHERE user_id = ?",
+            (user_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return {row[0].lower() for row in rows}
+
+
 async def get_user_feedback_history(user_id: str, limit: int = 20) -> dict:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row

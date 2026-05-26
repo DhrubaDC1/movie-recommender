@@ -143,6 +143,40 @@ class TMDBClient:
             "backdrop_url": f"{IMG_BASE}/w1280{m['backdrop_path']}" if m.get("backdrop_path") else None,
         }
 
+    # ── Top-rated discovery for swipe game ────────────────────────────────────
+
+    async def get_top_rated(
+        self,
+        language_code: Optional[str] = None,
+        page: int = 1,
+        exclude_languages: Optional[list[str]] = None,
+        min_votes: int = 300,
+    ) -> list[dict]:
+        """Top-rated movies by vote_average for the swipe game (no genre/keyword filter)."""
+        params: dict = {
+            "sort_by": "vote_average.desc",
+            "vote_count.gte": min_votes,
+            "include_adult": False,
+            "page": page,
+        }
+        if language_code:
+            params["with_original_language"] = language_code
+
+        r = await self._client.get(
+            f"{TMDB_BASE}/discover/movie", params=self._params(**params)
+        )
+        r.raise_for_status()
+        movies = [
+            self._format_discover(m)
+            for m in r.json().get("results", [])
+            if m.get("title")
+        ]
+
+        if exclude_languages:
+            movies = [m for m in movies if m["original_language"] not in exclude_languages]
+
+        return movies
+
     # ── Streaming providers (lightweight — no extra detail call needed) ─────
 
     async def enrich_with_streaming(self, tmdb_id: int) -> list[dict]:

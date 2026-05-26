@@ -22,6 +22,7 @@ from db import (
     insert_pipeline_event,
     get_user_feedback_history,
     upsert_movie_feedback,
+    get_all_rated_titles,
 )
 from auth import get_current_user, get_optional_user, router as auth_router
 
@@ -132,6 +133,51 @@ async def submit_feedback(
 @app.get("/user/history")
 async def user_history(user: dict = Depends(get_current_user)):
     return await get_user_feedback_history(user["id"])
+
+
+@app.get("/game/movies")
+async def game_movies(
+    language: list[str] = Query(default=[]),
+    page: int = Query(default=1, ge=1),
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Return top-rated movies for the swipe game, excluding already-rated ones."""
+    lang_codes = [_LANG_ISO[l] for l in language if l in _LANG_ISO]
+    include_others = "Others" in language
+
+    tasks: list = []
+    if lang_codes:
+        for code in lang_codes:
+            for p in (page, page + 1):
+                tasks.append(tmdb.get_top_rated(language_code=code, page=p))
+    if include_others:
+        known_langs = list(_LANG_ISO.values())
+        for p in (page, page + 1):
+            tasks.append(tmdb.get_top_rated(language_code=None, page=p, exclude_languages=known_langs))
+    if not tasks:
+        for p in (page, page + 1):
+            tasks.append(tmdb.get_top_rated(language_code=None, page=p))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    seen_ids: set[int] = set()
+    movies: list[dict] = []
+    for res in results:
+        if isinstance(res, Exception):
+            continue
+        for m in res:
+            tid = m.get("tmdb_id")
+            if tid and tid not in seen_ids:
+                seen_ids.add(tid)
+                movies.append(m)
+
+    movies.sort(key=lambda m: (m.get("vote_average", 0), m.get("vote_count", 0)), reverse=True)
+
+    if user:
+        rated = await get_all_rated_titles(user["id"])
+        movies = [m for m in movies if m["title"].lower() not in rated]
+
+    return movies[:20]
 
 
 @app.post("/recommend")

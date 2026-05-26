@@ -1,6 +1,15 @@
-import type { RecommendResponse, TMDBSearchResult } from "./types";
+import type { RecommendResponse, TMDBSearchResult, GameMovie } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export async function getGameMovies(languages: string[] = [], page = 1): Promise<GameMovie[]> {
+  const params = new URLSearchParams();
+  languages.forEach((l) => params.append("language", l));
+  params.set("page", String(page));
+  const res = await fetch(`${API}/game/movies?${params}`, { credentials: "include" });
+  if (!res.ok) return [];
+  return res.json();
+}
 
 export async function searchMovies(query: string): Promise<TMDBSearchResult[]> {
   if (query.trim().length < 2) return [];
