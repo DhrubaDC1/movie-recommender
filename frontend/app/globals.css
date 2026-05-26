@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-bg: #08080f;
+    --color-surface: #111118;
+    --color-border: rgba(255, 255, 255, 0.07);
+    --color-accent: #e50914;
+    --color-gold: #f5c518;
+    --color-muted: rgba(255, 255, 255, 0.45);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: #f0f0f0;
+    font-family: "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--color-border);
+  }
+
+  .glass-strong {
+    background: rgba(10, 10, 20, 0.75);
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.6) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glow-accent {
+    box-shadow: 0 0 40px rgba(229, 9, 20, 0.3);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 30px rgba(245, 197, 24, 0.2);
+  }
+}
+
+@keyframes slow-pan {
+  0%   { transform: translateX(0) scale(1.05); }
+  50%  { transform: translateX(-2%) scale(1.08); }
+  100% { transform: translateX(0) scale(1.05); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(229, 9, 20, 0.2); }
+  50%       { box-shadow: 0 0 40px rgba(229, 9, 20, 0.5); }
+}
+
+.animate-slow-pan  { animation: slow-pan 20s ease-in-out infinite; }
+.animate-fade-up   { animation: fade-up 0.7s ease both; }
+.animate-pulse-glow{ animation: pulse-glow 3s ease-in-out infinite; }

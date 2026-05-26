@@ -22,8 +22,8 @@ Initialized git, created the GitHub repo, wrote this journal. Let's go.
 **Feature order:**
 1. ✅ Project foundation (structure, configs, envs)
 2. ✅ Backend: FastAPI + all recommender modules
-3. Frontend: Landing page (hero background, preference input)
-4. Frontend: Results page (recommendation cards, streaming badges)
+3. ✅ Frontend: Landing page + Results page (full UI)
+4. ⏳ Deploy / integration testing
 
 ---
 
@@ -44,6 +44,26 @@ Sat down after coffee and knocked out the entire backend in one shot:
 **Also**: The Groq response sometimes wraps JSON in markdown code fences. Added a regex fallback `re.search(r"\[.*\]", text, re.DOTALL)` in `_parse_json` to handle it gracefully.
 
 Syntax-checked all files — all clean. Committing.
+
+---
+
+### 11:30 — Feature 3: Frontend — Landing page + Results page (full UI)
+
+After the coffee break, dug into the frontend. This is where I wanted the design to really shine.
+
+**What got built:**
+- `globals.css` — custom CSS variables, glass/glassmorphism utilities, keyframe animations (slow-pan, fade-up, pulse-glow)
+- `HeroBackground.tsx` — dual mode: collage of blurred movie posters (landing) OR blurred backdrop from top recommendation (results)
+- `MovieSearchInput.tsx` — debounced TMDB autocomplete with poster thumbnails in dropdown, keyboard Enter support
+- `PreferenceTag.tsx` — animated pill tags (green/red for liked/disliked) with Framer Motion enter/exit
+- `RecommendationCard.tsx` — full movie card: poster, rank badge, genre pills, IMDB gold rating, LLM explanation with red accent border, streaming badges
+- `StreamingBadge.tsx` — provider logos row
+- `app/page.tsx` — cinematic landing with hero, two-column preference input, animated CTA
+- `app/results/page.tsx` — loading state with spinner, error state with retry, staggered card reveal
+
+**Challenge hit**: Next.js 16 static build fails if `useSearchParams()` isn't wrapped in `<Suspense>`. Fixed by splitting `ResultsContent` (with hooks) from a `ResultsPage` wrapper that provides the `<Suspense>` boundary.
+
+**Build result**: Clean. All 3 routes prerendered as static. TypeScript 0 errors.
 
 ---
 
