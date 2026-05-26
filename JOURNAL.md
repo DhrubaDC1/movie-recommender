@@ -136,6 +136,47 @@ Build: TypeScript clean, Next.js static build passes.
 
 ---
 
+### 16:45 — Feature 6: Post-Recommendation Feedback + Rediscovery Loop
+
+This one closes the loop on the whole system — the user can now rate movies they've watched and immediately rediscover using those opinions.
+
+**What was built:**
+
+**`RecommendationCard.tsx` (updated)**
+- Added `feedback: FeedbackOpinion` prop and `onFeedback` callback
+- Two `FeedbackButton` components (👍 / 👎), always visible bottom-right of each card
+- Active state: coloured glow + solid background (green for liked, red for disliked)
+- Card border/glow changes to match the selected opinion — visual confirmation
+- `saving` prop disables both buttons while the API call is in-flight
+
+**`RediscoverButton.tsx` (new)**
+- Sticky floating button, fixed at bottom-center
+- Appears via spring animation when `count > 0` (at least one movie rated)
+- Shows count: "Rediscover with 3 new opinions →"
+- Exits smoothly when count drops to zero
+
+**`results/page.tsx` (heavily updated)**
+- `feedback` state: `Record<title, 'liked' | 'disliked' | null>`
+- `handleFeedback`: updates local state immediately (optimistic), then persists to DB if user is logged in. Guests get UI feedback but no DB write.
+- `extraLikedRef` / `extraDislikedRef`: accumulate feedback across multiple rediscovery rounds (so round 3 builds on rounds 1+2)
+- `handleRediscover`: merges accumulated opinions into the liked/disliked lists, calls `fetchRecs` in-place (no navigation), scrolls to top
+- `NavBar` now used instead of inline nav
+- Hint text "Rate movies you've watched to unlock Rediscovery" shown until first rating
+
+**Challenge**: Rediscovery needed to be *in-place* (no navigation) because the search params URL was the source of truth. Solved by storing extra liked/disliked in `useRef` (persists across renders, doesn't trigger re-render) and passing them directly into `fetchRecs()`.
+
+**Also**: Guest users (not logged in) still get the full UI experience — their feedback is tracked in the event log but not persisted to `movie_feedback`. The hint text under the title card changes based on auth state.
+
+**The full data flywheel now works:**
+1. User rates a movie 👍 → stored in `movie_feedback`
+2. Next session: history pre-fills liked list
+3. `/recommend` merges history into query → better candidates
+4. More ratings → better history → better recommendations
+
+Build: TypeScript clean, Next.js static build passes.
+
+---
+
 ## 2026-05-26 — Day 1 (continued)
 
 ### 14:00 — Feature 4: Interaction & Behaviour Logging
