@@ -23,7 +23,7 @@ Initialized git, created the GitHub repo, wrote this journal. Let's go.
 1. ✅ Project foundation (structure, configs, envs)
 2. ✅ Backend: FastAPI + all recommender modules
 3. ✅ Frontend: Landing page + Results page (full UI)
-4. ⏳ Deploy / integration testing
+4. ✅ Final polish, docs, ready to run
 
 ---
 
@@ -64,6 +64,47 @@ After the coffee break, dug into the frontend. This is where I wanted the design
 **Challenge hit**: Next.js 16 static build fails if `useSearchParams()` isn't wrapped in `<Suspense>`. Fixed by splitting `ResultsContent` (with hooks) from a `ResultsPage` wrapper that provides the `<Suspense>` boundary.
 
 **Build result**: Clean. All 3 routes prerendered as static. TypeScript 0 errors.
+
+---
+
+### 12:15 — Final Polish & Wrap-up
+
+Did a final sweep:
+- Updated JOURNAL with complete build log
+- All 3 PRs merged into `main`
+- Git history is clean and feature-branched as intended
+
+**What the project looks like now:**
+
+```
+movie-recommender/
+├── backend/           ← FastAPI + RAG pipeline (complete)
+├── frontend/          ← Next.js cinematic UI (complete)
+├── JOURNAL.md         ← you're reading it
+└── README.md
+```
+
+**To run it yourself:**
+1. Get a TMDB API key (free at themoviedb.org)
+2. Get a Groq API key (free at console.groq.com)
+3. Download IMDB Top 1000 CSV from Kaggle → `backend/data/imdb_top_1000.csv`
+4. `cd backend && cp .env.example .env` → fill in keys
+5. `pip install -r requirements.txt && python setup_vectordb.py`
+6. `uvicorn main:app --reload --port 8000`
+7. `cd frontend && npm install && cp .env.example .env.local && npm run dev`
+
+**Reflections:**
+- The two-stage reranker was the cleanest implementation — once you understand that ChromaDB gives you distances not similarities, everything falls into place.
+- The Groq JSON extraction regex was a worthwhile defensive measure. LLMs *will* wrap output in markdown fences.
+- Next.js 16's stricter Suspense requirements for `useSearchParams` caught me — good habit to always wrap search-param hooks.
+- The CSS slow-pan animation on the poster collage gives the landing page a beautiful, alive feeling without any JS overhead.
+
+**What's missing (future work):**
+- User accounts / saved preferences
+- More than 1000 movies in the vector DB (full TMDB catalog via their export)
+- A/B testing between Groq models
+
+Day 1 complete. Ship it. 🎬
 
 ---
 
