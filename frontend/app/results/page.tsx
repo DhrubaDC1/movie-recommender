@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense, useRef } from "react";
+import { useEffect, useState, useCallback, Suspense, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { getRecommendations } from "@/lib/api";
@@ -30,13 +30,16 @@ function ResultsContent() {
   const [savingTitle, setSavingTitle] = useState<string | null>(null);
   const [rediscovering, setRediscovering] = useState(false);
 
-  const liked = searchParams.getAll("liked");
-  const disliked = searchParams.getAll("disliked");
+  // Memoize to stable references — searchParams.getAll() returns a new array every render
+  const liked = useMemo(() => searchParams.getAll("liked"), [searchParams]);
+  const disliked = useMemo(() => searchParams.getAll("disliked"), [searchParams]);
   const sessionId = searchParams.get("session_id") ?? undefined;
 
   // Track extra liked/disliked injected across rediscovery rounds
   const extraLikedRef = useRef<string[]>([]);
   const extraDislikedRef = useRef<string[]>([]);
+  // Prevent double-fire on initial mount
+  const fetchInitiatedRef = useRef(false);
 
   useEffect(() => {
     logger.init();
@@ -45,7 +48,7 @@ function ResultsContent() {
   }, []);
 
   const fetchRecs = useCallback(
-    async (extraLiked: string[] = [], extraDisliked: string[] = []) => {
+    async (extraLiked: string[] = [], extraDisliked: string[] = [], signal?: AbortSignal) => {
       if (liked.length === 0) {
         router.push("/");
         return;
@@ -55,7 +58,7 @@ function ResultsContent() {
       try {
         const allLiked = [...new Set([...liked, ...extraLiked])];
         const allDisliked = [...new Set([...disliked, ...extraDisliked])];
-        const data = await getRecommendations(allLiked, allDisliked, 5, sessionId);
+        const data = await getRecommendations(allLiked, allDisliked, 5, sessionId, signal);
         const latencyMs = Math.round(performance.now() - t0);
         setRecommendations(data.recommendations);
         setFeedback({});
@@ -68,18 +71,23 @@ function ResultsContent() {
           results: data.recommendations.map((r) => ({ title: r.title, rank: r.rank })),
         });
       } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") return; // cancelled — not an error
         const msg = e instanceof Error ? e.message : "Something went wrong";
         setErrorMsg(msg);
         setState("error");
         logger.track("recommendations_error", { liked, disliked, error: msg });
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [liked, disliked, sessionId]
+    [liked, disliked, sessionId, router]
   );
 
   useEffect(() => {
-    fetchRecs();
+    if (fetchInitiatedRef.current) return;
+    fetchInitiatedRef.current = true;
+
+    const controller = new AbortController();
+    fetchRecs([], [], controller.signal);
+    return () => controller.abort();
   }, [fetchRecs]);
 
   const handleFeedback = useCallback(
