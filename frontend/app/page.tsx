@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import HeroBackground from "@/components/HeroBackground";
 import MovieSearchInput from "@/components/MovieSearchInput";
@@ -373,11 +374,46 @@ export default function HomePage() {
           </div>
         </motion.div>
 
+        {/* CineSwipe CTA */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          className="mt-6 w-full max-w-3xl"
+        >
+          <Link
+            href="/game"
+            className="flex items-center justify-between px-6 py-4 rounded-xl group transition-all duration-200"
+            style={{
+              background: "rgba(229,9,20,0.07)",
+              border: "1px solid rgba(229,9,20,0.18)",
+            }}
+          >
+            <div className="flex items-center gap-4">
+              <span className="text-2xl">🎬</span>
+              <div>
+                <p className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">
+                  CineSwipe — Rate movies, build your taste profile
+                </p>
+                <p className="text-xs text-white/30 mt-0.5">
+                  Swipe through top-rated films · Your likes feed directly into recommendations
+                </p>
+              </div>
+            </div>
+            <span
+              className="text-sm font-semibold flex-shrink-0 ml-4 group-hover:translate-x-1 transition-transform"
+              style={{ color: "#e50914" }}
+            >
+              Play →
+            </span>
+          </Link>
+        </motion.div>
+
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.9 }}
-          className="mt-8 text-xs text-white/20 text-center"
+          className="mt-6 text-xs text-white/20 text-center"
         >
           RAG pipeline · ChromaDB · Groq LLaMA · TMDB
         </motion.p>
