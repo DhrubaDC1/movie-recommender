@@ -13,11 +13,12 @@ export interface GameCardHandle {
 interface Props {
   movie: GameMovie;
   onAction: (action: GameAction) => void;
+  interactive?: boolean;
 }
 
 const SWIPE_THRESHOLD = 110;
 
-const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction }, ref) => {
+const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction, interactive = true }, ref) => {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-220, 220], [-22, 22]);
   const likedOpacity = useTransform(x, [40, SWIPE_THRESHOLD], [0, 1]);
@@ -54,10 +55,12 @@ const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction }, ref) =>
       ? { y: -500, opacity: 0 }
       : {};
 
+  const dragEnabled = interactive && !exitDir;
+
   return (
     <motion.div
-      style={{ x, rotate, zIndex: 10, cursor: exitDir ? "default" : "grab" }}
-      drag={!exitDir ? "x" : false}
+      style={{ x, rotate, cursor: dragEnabled ? "grab" : "default" }}
+      drag={dragEnabled ? "x" : false}
       dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.85}
       onDragEnd={handleDragEnd}
@@ -167,7 +170,10 @@ const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction }, ref) =>
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center justify-center gap-5 mt-2">
+          <div
+            className="flex items-center justify-center gap-5 mt-2"
+            style={{ pointerEvents: interactive ? "auto" : "none" }}
+          >
             <ActionButton
               onClick={() => triggerLeave("left")}
               color="rgba(239,68,68,0.88)"

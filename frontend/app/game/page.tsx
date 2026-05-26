@@ -230,57 +230,38 @@ export default function GamePage() {
                 </div>
               </div>
 
-              {/* Card stack */}
+              {/* Card stack — render bottom-to-top so DOM order matches z-order.
+                  Each card keeps its identity (key=tmdb_id) so when the deck
+                  shifts, the same DOM node smoothly animates to its new
+                  stack position. No remount = no text-appearing jump. */}
               <div className="relative w-full" style={{ height: 500 }}>
-                {/* Ghost card 3 */}
-                <AnimatePresence>
-                  {deck[2] && (
+                {deck.slice(0, 3).map((movie, i) => i).reverse().map((i) => {
+                  const movie = deck[i];
+                  const isActive = i === 0;
+                  const scale = i === 0 ? 1 : i === 1 ? 0.94 : 0.88;
+                  const y = i === 0 ? 0 : i === 1 ? 19 : 38;
+                  const opacity = i === 0 ? 1 : i === 1 ? 0.7 : 0.45;
+                  return (
                     <motion.div
-                      key={`ghost2-${deck[2].tmdb_id}`}
-                      className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none"
-                      style={{ zIndex: 1, transformOrigin: "bottom center" }}
-                      animate={{ scale: 0.88, y: 38, opacity: 0.45 }}
-                      transition={{ type: "spring", stiffness: 280, damping: 28 }}
-                    >
-                      <GhostCard movie={deck[2]} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Ghost card 2 */}
-                <AnimatePresence>
-                  {deck[1] && (
-                    <motion.div
-                      key={`ghost1-${deck[1].tmdb_id}`}
-                      className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none"
-                      style={{ zIndex: 2, transformOrigin: "bottom center" }}
-                      animate={{ scale: 0.94, y: 19, opacity: 0.7 }}
-                      transition={{ type: "spring", stiffness: 280, damping: 28 }}
-                    >
-                      <GhostCard movie={deck[1]} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Active card */}
-                <AnimatePresence>
-                  {topCard && (
-                    <motion.div
-                      key={topCard.tmdb_id}
+                      key={movie.tmdb_id}
                       className="absolute inset-0"
-                      style={{ zIndex: 10 }}
-                      initial={{ scale: 0.93, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 26 }}
+                      style={{
+                        zIndex: 10 - i,
+                        transformOrigin: "bottom center",
+                        pointerEvents: isActive ? "auto" : "none",
+                      }}
+                      animate={{ scale, y, opacity }}
+                      transition={{ type: "spring", stiffness: 280, damping: 28 }}
                     >
                       <GameCard
-                        ref={cardRef}
-                        movie={topCard}
+                        ref={isActive ? cardRef : undefined}
+                        movie={movie}
                         onAction={handleAction}
+                        interactive={isActive}
                       />
                     </motion.div>
-                  )}
-                </AnimatePresence>
+                  );
+                })}
 
                 {/* Loading spinner when deck is empty and fetching */}
                 {!topCard && loadingMore && (
@@ -373,25 +354,3 @@ export default function GamePage() {
   );
 }
 
-// Ghost card — purely decorative, uses absolute positioning so it never shifts
-function GhostCard({ movie }: { movie: GameMovie }) {
-  return (
-    <div
-      className="absolute inset-0 rounded-2xl overflow-hidden"
-      style={{
-        background: "rgba(12, 12, 22, 0.9)",
-        border: "1px solid rgba(255,255,255,0.07)",
-      }}
-    >
-      {movie.poster_url && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={movie.poster_url}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover"
-          draggable={false}
-        />
-      )}
-    </div>
-  );
-}
