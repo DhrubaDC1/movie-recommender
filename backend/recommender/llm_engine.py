@@ -5,6 +5,15 @@ import re
 import groq as groq_lib
 from groq import AsyncGroq
 
+_ISO_TO_NAME: dict[str, str] = {
+    "en": "English", "hi": "Hindi", "bn": "Bangla",
+    "fr": "French",  "ja": "Japanese", "ko": "Korean",
+    "es": "Spanish", "de": "German",   "it": "Italian",
+    "zh": "Chinese", "ta": "Tamil",    "te": "Telugu",
+    "ru": "Russian", "pt": "Portuguese", "ar": "Arabic",
+    "ml": "Malayalam", "mr": "Marathi", "pa": "Punjabi",
+}
+
 
 SYSTEM_PROMPT = """You are a world-class cinematic expert and personalized film recommender.
 You reason step by step before giving final rankings.
@@ -22,8 +31,8 @@ Here are {n} candidate films retrieved for them:
 
 Task:
 1. Think step by step about which films best match this user's taste based on what they loved and avoided.
-2. If language preferences are specified, prioritise films in those languages when quality is otherwise equal.
-3. Rank ALL candidates from best to worst fit.
+2. LANGUAGE RULE: If PREFERRED LANGUAGES is not "Any", you MUST rank films whose Language field matches a preferred language above films that do not match, as long as a language-matching candidate exists. Only ignore this rule if no candidates at all match the preferred language.
+3. Rank ALL candidates from best to worst fit, applying both taste AND language rules.
 4. For each, write a 2-sentence personalized explanation that explicitly references their liked or disliked films.
 
 Output ONLY a JSON array (no markdown, no extra text):
@@ -56,6 +65,7 @@ class LLMEngine:
     ) -> list[dict]:
         candidates_block = "\n".join(
             f"{i+1}. {c['title']} ({c.get('year', 'N/A')}) | "
+            f"Language: {_ISO_TO_NAME.get(c.get('original_language', ''), c.get('original_language', 'N/A'))} | "
             f"Genre: {c.get('genre', 'N/A')} | "
             f"IMDB: {c.get('imdb_rating', 'N/A')} | "
             f"Director: {c.get('director', 'N/A')}"
