@@ -340,3 +340,47 @@ Lesson: `searchParams.getAll()` is a call that allocates a new array every time.
 
 ---
 
+## 2026-05-26 — Day 1 (night)
+
+### 19:30 — Feature 7: Reliable Movie Thumbnails + Language Preference Filter
+
+Two features in one branch (`feat/thumbnails-and-language-filter`).
+
+**Feature 1 — Reliable Thumbnails**
+
+The `RecommendationCard` already had a poster `<img>` tag, but if the TMDB URL failed to load (network error, wrong title match, movie not in TMDB), the image would silently break. Fixed with:
+
+- `imgError` state + `onError={() => setImgError(true)}` on the img tag
+- `PosterFallback` component: cinema-red gradient background + movie initials extracted from the title (up to two words). Renders when `poster_url` is null OR when the image load fails.
+- Poster column widened: 120px→130px (mobile), 160px→175px (desktop). `self-stretch` ensures it fills the full card height.
+
+**Feature 2 — Language Preference Filter**
+
+Flow: Landing page → URL params → Results page → API body → Backend filter → LLM hint.
+
+*Frontend (`page.tsx`):*
+- Four multi-select language pills: **English, Hindi, Bangla, Others**
+- Cinema-red glow when active; neutral glass when inactive
+- "No filter — recommends from all languages" helper text when nothing selected
+- Selected languages appended to URL as `?language=English&language=Hindi`
+
+*Frontend (`results/page.tsx` + `api.ts`):*
+- `languages` read from URL params (memoized like `liked`/`disliked`)
+- Passed into `getRecommendations` → POST body `languages: [...]`
+- Results nav subtitle shows active filter: "Based on: Inception · Hindi"
+
+*Backend:*
+- `_LANG_ISO` map: `{"English": "en", "Hindi": "hi", "Bangla": "bn"}`
+- `"Others"` = anything NOT in `[en, hi, bn]`
+- **Soft-sort** (not hard-filter): preferred-language candidates go first in the list, the rest are appended. This means we always return `num_results` results even if the IMDB Top 1000 has zero Bengali films — the LLM just gets them ranked lower.
+- TMDB `_enrich()` now returns `original_language` from the search result (no extra API call — it's already in the search response).
+- `rank_and_explain` updated: `PREFERRED LANGUAGES: {languages}` added to the CoT prompt. LLM prioritises matching languages when quality is otherwise equal.
+
+**Challenge**: The PR merge kept targeting `feat/project-foundation` (the repo's default branch is wrong). Fixed by merging directly to `main` locally and pushing.
+
+**Lesson (soft vs hard filter)**: Hard-filtering by language in a small dataset (1000 English-majority films) would leave users with Bengali preference getting 0 results. Soft-sort keeps UX intact while still honouring the preference wherever possible.
+
+Build: TypeScript clean. All changes on `main`.
+
+---
+
