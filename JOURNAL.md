@@ -195,6 +195,27 @@ Lesson: don't pin abandoned libraries. passlib has had no release since 2020; th
 
 ---
 
+### 18:00 — Hotfix: Groq rate limit (PR #8)
+
+Hit a 429 from Groq: `llama-3.3-70b-versatile` free tier has only 12,000 TPM. With a 10-candidate prompt + 1024-token response, each call burns ~2,000 tokens. A few rapid test requests was enough to hit the wall.
+
+**Two fixes in `llm_engine.py`:**
+
+1. **Switched default model to `llama-3.1-8b-instant`** — 30,000 TPM free limit vs 12,000. Faster too. Quality is slightly lower than 70b but perfectly good for movie recommendations.
+
+2. **Added `_call_with_retry` with up to 3 attempts:**
+   - `RateLimitError`: parse the "Please try again in X.Xs" from Groq's error message, sleep for that duration + 1s buffer, then retry
+   - `APIStatusError` (5xx): exponential backoff (2^attempt seconds)
+   - After max attempts, re-raise so the endpoint returns a real error
+
+3. **Reduced `max_tokens` from 2048 to 1024** — movie recommendation explanations don't need 2048 tokens. Halves token burn per call.
+
+4. **Dropped `Stars` from the candidates block** — director + genre + IMDB rating is enough context for ranking. Saves ~50 tokens per candidate.
+
+With these changes, each call burns ~800-1000 tokens instead of ~2000. Much more headroom on the free tier.
+
+---
+
 ## 2026-05-26 — Day 1 (continued)
 
 ### 14:00 — Feature 4: Interaction & Behaviour Logging
