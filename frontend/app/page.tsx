@@ -14,6 +14,12 @@ import { fetchUserHistory } from "@/lib/auth";
 const MAX_LIKED = 5;
 const MAX_DISLIKED = 3;
 const LANGUAGE_OPTIONS = ["English", "Hindi", "Bangla", "Others"] as const;
+const ERA_OPTIONS = [
+  { label: "Latest", sub: "2022–now" },
+  { label: "2010s",  sub: "2010–2019" },
+  { label: "2000s",  sub: "2000–2009" },
+  { label: "Classics", sub: "before 2000" },
+] as const;
 
 export default function HomePage() {
   const router = useRouter();
@@ -21,6 +27,7 @@ export default function HomePage() {
   const [liked, setLiked] = useState<string[]>([]);
   const [disliked, setDisliked] = useState<string[]>([]);
   const [selectedLangs, setSelectedLangs] = useState<string[]>([]);
+  const [selectedEra, setSelectedEra] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -87,12 +94,13 @@ export default function HomePage() {
     }
     setError(null);
     setLoading(true);
-    logger.track("discover_click", { liked, disliked, languages: selectedLangs });
+    logger.track("discover_click", { liked, disliked, languages: selectedLangs, era: selectedEra });
     await logger.flush();
     const params = new URLSearchParams();
     liked.forEach((m) => params.append("liked", m));
     disliked.forEach((m) => params.append("disliked", m));
     selectedLangs.forEach((l) => params.append("language", l));
+    if (selectedEra) params.set("era", selectedEra);
     params.append("session_id", logger.getSessionId());
     router.push(`/results?${params.toString()}`);
   };
@@ -192,6 +200,59 @@ export default function HomePage() {
                 {selectedLangs.length === 0
                   ? "No filter — recommends from all languages"
                   : `Prioritising: ${selectedLangs.join(", ")}`}
+              </p>
+            </div>
+
+            <div
+              className="mb-6"
+              style={{ height: "1px", background: "rgba(255,255,255,0.05)" }}
+            />
+
+            {/* Era selector */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2.5">
+                <h2 className="text-sm font-semibold tracking-wide text-white/80 uppercase">
+                  Era
+                </h2>
+                {selectedEra && (
+                  <button
+                    onClick={() => setSelectedEra("")}
+                    className="text-xs text-white/30 hover:text-white/60 transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {ERA_OPTIONS.map(({ label, sub }) => {
+                  const active = selectedEra === label;
+                  return (
+                    <motion.button
+                      key={label}
+                      onClick={() => setSelectedEra(active ? "" : label)}
+                      whileTap={{ scale: 0.93 }}
+                      className="px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5"
+                      style={{
+                        background: active
+                          ? "linear-gradient(135deg, #e50914 0%, #b0060f 100%)"
+                          : "rgba(255,255,255,0.06)",
+                        border: active
+                          ? "1px solid rgba(229,9,20,0.5)"
+                          : "1px solid rgba(255,255,255,0.1)",
+                        color: active ? "#fff" : "rgba(255,255,255,0.45)",
+                        boxShadow: active ? "0 0 14px rgba(229,9,20,0.3)" : "none",
+                      }}
+                    >
+                      {label}
+                      <span style={{ fontSize: "10px", opacity: 0.65 }}>{sub}</span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-white/20 mt-2">
+                {selectedEra
+                  ? `Searching ${selectedEra === "Latest" ? "recent releases" : selectedEra === "Classics" ? "films before 2000" : `films from the ${selectedEra}`}`
+                  : "No filter — any release year"}
               </p>
             </div>
 
