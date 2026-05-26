@@ -12,12 +12,13 @@ export async function searchMovies(query: string): Promise<TMDBSearchResult[]> {
 export async function getRecommendations(
   liked: string[],
   disliked: string[],
-  numResults = 5
+  numResults = 5,
+  sessionId?: string
 ): Promise<RecommendResponse> {
   const res = await fetch(`${API}/recommend`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ liked, disliked, num_results: numResults }),
+    body: JSON.stringify({ liked, disliked, num_results: numResults, session_id: sessionId }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
