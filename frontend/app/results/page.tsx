@@ -33,6 +33,7 @@ function ResultsContent() {
   // Memoize to stable references — searchParams.getAll() returns a new array every render
   const liked = useMemo(() => searchParams.getAll("liked"), [searchParams]);
   const disliked = useMemo(() => searchParams.getAll("disliked"), [searchParams]);
+  const languages = useMemo(() => searchParams.getAll("language"), [searchParams]);
   const sessionId = searchParams.get("session_id") ?? undefined;
 
   // Track extra liked/disliked injected across rediscovery rounds
@@ -56,7 +57,7 @@ function ResultsContent() {
       try {
         const allLiked = [...new Set([...liked, ...extraLiked])];
         const allDisliked = [...new Set([...disliked, ...extraDisliked])];
-        const data = await getRecommendations(allLiked, allDisliked, 5, sessionId, signal);
+        const data = await getRecommendations(allLiked, allDisliked, 5, sessionId, signal, languages);
         const latencyMs = Math.round(performance.now() - t0);
         setRecommendations(data.recommendations);
         setFeedback({});
@@ -76,7 +77,7 @@ function ResultsContent() {
         logger.track("recommendations_error", { liked, disliked, error: msg });
       }
     },
-    [liked, disliked, sessionId, router]
+    [liked, disliked, languages, sessionId, router]
   );
 
   useEffect(() => {
@@ -141,7 +142,11 @@ function ResultsContent() {
           await logger.flush();
           router.push("/");
         }}
-        subtitle={state === "success" ? `Based on: ${liked.join(", ")}` : undefined}
+        subtitle={
+          state === "success"
+            ? `Based on: ${liked.join(", ")}${languages.length ? ` · ${languages.join(", ")}` : ""}`
+            : undefined
+        }
       />
 
       <div className="relative z-10 max-w-4xl mx-auto px-6">
