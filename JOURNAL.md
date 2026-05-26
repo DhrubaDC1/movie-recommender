@@ -459,3 +459,97 @@ liked titles → TMDB genre+keyword lookup (parallel)
 **Caveat:** The IMDB CSV + ChromaDB setup (`setup_vectordb.py`) still works if you want the old approach — the code is untouched, just not used by the server anymore.
 
 ---
+
+### 22:00 — Hotfix: Intermittent missing movie thumbnails
+
+Some recommendation cards were rendering without a poster even when TMDB had one. The root cause was in how the backend maps LLM output back to candidate metadata.
+
+**Root cause — LLM title rephrasing breaks the lookup**
+
+The LLM was asked to return each film's title in the JSON output. For most films this was exact, but for some it would rephrase: `"Se7en"` → `"Seven"`, `"2001: A Space Odyssey"` → `"2001 A Space Odyssey"`, `"Léon: The Professional"` → `"Leon"`. The backend was doing an exact `title.lower()` match to find the candidate dict (and attach `poster_url`). When the match failed, `match = {}`, so `poster_url` became `None`.
+
+**Fix — three-tier lookup in `main.py`:**
+
+```python
+# 1. candidate_index: ask LLM to return the 1-based index from the list (added to prompt)
+idx = rec.get("candidate_index")
+if isinstance(idx, int) and 1 <= idx <= len(top_candidates):
+    match = top_candidates[idx - 1]  # exact array position, immune to rephrasing
+
+# 2. exact title match (case-insensitive fallback)
+if not match:
+    match = next((c for c in top_candidates if c["title"].lower() == rec["title"].lower()), {})
+
+# 3. fuzzy match via difflib (catches minor variants, cutoff=0.6 avoids false positives)
+if not match:
+    close = get_close_matches(rec["title"], candidate_titles, n=1, cutoff=0.6)
+    if close:
+        match = next(c for c in top_candidates if c["title"] == close[0])
+```
+
+**Updated LLM prompt** (`llm_engine.py`): added `"candidate_index": <the number shown before the film>` to the JSON schema example. The LLM reliably returns the index (1-based, matching the `1. Title` prefix in the candidates block), making tier-1 the dominant path.
+
+**Frontend improvement** (`RecommendationCard.tsx`):
+- Shimmer skeleton shown while poster image loads (`imgLoaded` state)
+- Image fades in smoothly: `opacity: imgLoaded ? 1 : 0, transition: "opacity 0.3s"`
+- `loading="lazy"` added — defers offscreen image fetches, reduces layout jank
+- `PosterFallback` (gradient + initials) already covered the null case — now also covers `onError` (broken TMDB URLs)
+
+**Result**: Posters now appear consistently across all recommendations. The three-tier lookup means even heavily rephrased titles (LLM translating foreign titles, using subtitles instead of main titles) still find their TMDB metadata.
+
+---
+
+### 22:45 — Feature 9: Era / Time-Period Filter
+
+Users can now specify which era of movies they want — a single-select pill row on the landing page.
+
+**Four options (single-select, toggle to deselect):**
+- **Latest** (2022–now)
+- **2010s** (2010–2019)
+- **2000s** (2000–2009)
+- **Classics** (before 2000)
+
+No selection = any release year (default).
+
+**How the filter works end-to-end:**
+
+*Frontend (`page.tsx`):*
+- `ERA_OPTIONS` constant with `label` + `sub` (year range hint displayed inside the pill)
+- `selectedEra` state — string, empty means no filter
+- Clicking the active pill deselects: `setSelectedEra(active ? "" : label)`
+- Appended to URL: `?era=Latest`
+
+*Frontend (`results/page.tsx` + `api.ts`):*
+- `era` read from URL params; passed into `getRecommendations` → POST body
+- Shown in nav subtitle: "Based on: Inception · Hindi · 2010s"
+
+*Backend (`main.py`):*
+- `_ERA_DATES` dict maps labels to `(date_gte, date_lte)` tuples:
+  ```python
+  _ERA_DATES = {
+      "Latest":   ("2022-01-01", None),
+      "2010s":    ("2010-01-01", "2019-12-31"),
+      "2000s":    ("2000-01-01", "2009-12-31"),
+      "Classics": (None,        "1999-12-31"),
+  }
+  ```
+- `date_gte` and `date_lte` computed once, then passed into every `discover_movies()` call
+
+*Backend (`tmdb_client.py`):*
+- `discover_movies()` now accepts `date_gte` and `date_lte` optional params
+- Forwarded as TMDB query params: `primary_release_date.gte` / `primary_release_date.lte`
+- TMDB enforces the filter server-side — no post-hoc filtering needed on our end
+
+*Backend (`llm_engine.py`):*
+- `PREFERRED ERA: {era}` added to the `RANK_PROMPT`
+- ERA RULE step: "prefer films whose year falls within that era, as secondary to taste quality"
+- `era` field now in `rank_and_explain()` signature
+
+**Why TMDB-native filtering is the right approach:**
+Post-hoc filtering would mean: retrieve N candidates → throw some away → maybe return fewer than `num_results`. TMDB's date params filter at the source — every candidate already satisfies the era constraint, so we always get a full result set.
+
+**Logged in pipeline events**: era included in the backend `pipeline_event` record for analytics.
+
+Build: TypeScript clean. Committed to `feat/time-period-filter`, merged to `main`.
+
+---
