@@ -20,7 +20,7 @@ const SWIPE_THRESHOLD = 110;
 
 const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction, interactive = true }, ref) => {
   const x = useMotionValue(0);
-  const rotate = useTransform(x, [-220, 220], [-22, 22]);
+  const rotate = useTransform(x, [-220, 220], [-15, 15]);
   const likedOpacity = useTransform(x, [40, SWIPE_THRESHOLD], [0, 1]);
   const nopeOpacity = useTransform(x, [-40, -SWIPE_THRESHOLD], [0, 1]);
 
@@ -48,9 +48,9 @@ const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction, interacti
 
   const exitTarget =
     exitDir === "right"
-      ? { x: 700, rotate: 25, opacity: 0 }
+      ? { x: 700, rotate: 20, opacity: 0 }
       : exitDir === "left"
-      ? { x: -700, rotate: -25, opacity: 0 }
+      ? { x: -700, rotate: -20, opacity: 0 }
       : exitDir === "up"
       ? { y: -500, opacity: 0 }
       : {};
@@ -62,55 +62,69 @@ const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction, interacti
       style={{ x, rotate, cursor: dragEnabled ? "grab" : "default" }}
       drag={dragEnabled ? "x" : false}
       dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.85}
+      dragElastic={0.8}
       onDragEnd={handleDragEnd}
       animate={exitDir ? exitTarget : {}}
-      transition={exitDir ? { duration: 0.38, ease: "easeOut" } : {}}
+      transition={exitDir ? { duration: 0.35, ease: "easeOut" } : {}}
       onAnimationComplete={() => {
         if (exitDir) {
           onAction(exitDir === "right" ? "liked" : exitDir === "left" ? "disliked" : "skip");
         }
       }}
-      className="absolute inset-0 select-none"
+      className="absolute inset-0 select-none touch-none"
     >
       {/* LIKE stamp */}
       <motion.div
         style={{ opacity: likedOpacity }}
-        className="absolute top-9 left-7 z-20 pointer-events-none"
+        className="absolute top-10 left-8 z-30 pointer-events-none"
       >
-        <div className="px-4 py-1.5 rounded-xl" style={{ border: "3px solid #22c55e", transform: "rotate(-18deg)" }}>
-          <span className="text-xl font-black tracking-[0.15em] text-green-400">LIKE</span>
+        <div 
+          className="px-5 py-2.5 rounded-2xl border-4 select-none shadow-2xl" 
+          style={{ 
+            borderColor: "#22c55e", 
+            transform: "rotate(-14deg)",
+            boxShadow: "0 0 25px rgba(34,197,94,0.35)",
+            background: "rgba(4, 120, 87, 0.2)",
+          }}
+        >
+          <span className="text-2xl font-black tracking-[0.2em] text-[#22c55e]">LIKE</span>
         </div>
       </motion.div>
 
       {/* NOPE stamp */}
       <motion.div
         style={{ opacity: nopeOpacity }}
-        className="absolute top-9 right-7 z-20 pointer-events-none"
+        className="absolute top-10 right-8 z-30 pointer-events-none"
       >
-        <div className="px-4 py-1.5 rounded-xl" style={{ border: "3px solid #ef4444", transform: "rotate(18deg)" }}>
-          <span className="text-xl font-black tracking-[0.15em] text-red-400">NOPE</span>
+        <div 
+          className="px-5 py-2.5 rounded-2xl border-4 select-none shadow-2xl" 
+          style={{ 
+            borderColor: "#ef4444", 
+            transform: "rotate(14deg)",
+            boxShadow: "0 0 25px rgba(239,68,68,0.35)",
+            background: "rgba(185, 28, 28, 0.2)",
+          }}
+        >
+          <span className="text-2xl font-black tracking-[0.2em] text-[#ef4444]">NOPE</span>
         </div>
       </motion.div>
 
-      {/* Card — everything absolutely positioned so nothing shifts on image load */}
+      {/* Card Wrapper */}
       <div
-        className="absolute inset-0 rounded-2xl overflow-hidden"
+        className="absolute inset-0 rounded-3xl overflow-hidden border backdrop-filter backdrop-blur-md"
         style={{
-          background: "rgba(12, 12, 22, 0.98)",
-          border: "1px solid rgba(255,255,255,0.09)",
-          boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
+          background: "linear-gradient(180deg, rgba(255,255,255,0.01) 0%, rgba(255,255,255,0.002) 100%), rgba(7,7,15,0.85)",
+          borderColor: "rgba(255, 255, 255, 0.08)",
+          boxShadow: "0 30px 70px rgba(0,0,0,0.85), inset 0 1px 1px rgba(255,255,255,0.08)",
         }}
       >
-        {/* Poster — fills the entire card; text overlays on top */}
+        {/* Poster */}
         <div className="absolute inset-0">
-          {/* Shimmer shown until image resolves */}
           {!imgLoaded && !imgError && (
             <div
               className="absolute inset-0 animate-pulse"
               style={{
-                background:
-                  "linear-gradient(160deg, rgba(229,9,20,0.08) 0%, rgba(12,12,22,0.9) 100%)",
+                background: "linear-gradient(160deg, rgba(229,9,20,0.08) 0%, rgba(6,6,12,0.95) 100%)",
               }}
             />
           )}
@@ -121,7 +135,7 @@ const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction, interacti
               src={movie.poster_url}
               alt={movie.title}
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ opacity: imgLoaded ? 1 : 0, transition: "opacity 0.25s" }}
+              style={{ opacity: imgLoaded ? 1 : 0, transition: "opacity 0.3s" }}
               draggable={false}
               onLoad={() => setImgLoaded(true)}
               onError={() => setImgError(true)}
@@ -131,39 +145,37 @@ const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction, interacti
           )}
         </div>
 
-        {/* Bottom gradient — always present so text is readable before image loads */}
+        {/* Bottom gradient mask */}
         <div
-          className="absolute inset-x-0 bottom-0"
+          className="absolute inset-x-0 bottom-0 pointer-events-none"
           style={{
-            height: "62%",
-            background:
-              "linear-gradient(to top, rgba(10,10,22,1) 0%, rgba(10,10,22,0.92) 45%, rgba(10,10,22,0.5) 72%, transparent 100%)",
-            pointerEvents: "none",
+            height: "65%",
+            background: "linear-gradient(to top, #06060c 0%, rgba(6,6,12,0.95) 45%, rgba(6,6,12,0.55) 75%, transparent 100%)",
           }}
         />
 
-        {/* Rating badge — top right, always visible */}
+        {/* Rating badge */}
         <div
-          className="absolute top-4 right-4 z-10 flex items-center gap-1 px-2.5 py-1 rounded-lg"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)" }}
+          className="absolute top-4 right-4 z-20 flex items-center gap-1.5 px-3 py-1 rounded-xl shadow-lg border border-white/[0.05]"
+          style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(12px)" }}
         >
-          <span style={{ color: "#f5c518" }} className="text-sm">★</span>
-          <span className="text-sm font-bold text-white/90">
+          <span style={{ color: "#f5c518" }} className="text-xs">★</span>
+          <span className="text-xs font-bold text-white/90">
             {movie.vote_average?.toFixed(1)}
           </span>
         </div>
 
-        {/* Info + buttons — absolutely pinned to the bottom, always full-height */}
-        <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-5 pt-4 flex flex-col gap-2">
-          <div>
-            <h3 className="text-[1.35rem] font-bold text-white leading-tight">
+        {/* Info + buttons */}
+        <div className="absolute inset-x-0 bottom-0 z-20 px-6 pb-6 pt-4 flex flex-col gap-4">
+          <div className="space-y-1.5">
+            <h3 className="text-xl md:text-2xl font-extrabold text-white leading-tight tracking-tight">
               {movie.title}
             </h3>
-            <p className="text-xs text-white/45 mt-0.5">
+            <p className="text-xs font-bold text-white/40 tracking-wide uppercase">
               {[movie.year, movie.genre].filter(Boolean).join(" · ")}
             </p>
             {movie.overview && (
-              <p className="text-xs text-white/30 leading-relaxed mt-1.5 line-clamp-2">
+              <p className="text-xs leading-relaxed text-white/50 line-clamp-3 font-medium">
                 {movie.overview}
               </p>
             )}
@@ -171,37 +183,43 @@ const GameCard = forwardRef<GameCardHandle, Props>(({ movie, onAction, interacti
 
           {/* Action buttons */}
           <div
-            className="flex items-center justify-center gap-5 mt-2"
+            className="flex items-center justify-center gap-5 mt-2 select-none"
             style={{ pointerEvents: interactive ? "auto" : "none" }}
           >
+            {/* Dislike Action */}
             <ActionButton
               onClick={() => triggerLeave("left")}
-              color="rgba(239,68,68,0.88)"
-              hoverShadow="0 0 20px rgba(239,68,68,0.4)"
+              color="linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)"
+              hoverShadow="0 4px 18px rgba(239,68,68,0.3)"
+              borderColor="rgba(239,68,68,0.4)"
               label="Disliked"
             >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </ActionButton>
 
+            {/* Skip Action */}
             <ActionButton
               onClick={() => triggerLeave("up")}
-              color="rgba(255,255,255,0.10)"
-              hoverShadow="0 0 16px rgba(255,255,255,0.1)"
+              color="rgba(255,255,255,0.05)"
+              hoverShadow="0 4px 12px rgba(255,255,255,0.08)"
+              borderColor="rgba(255,255,255,0.15)"
               label="Haven't watched"
               small
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2L12 15M12 19v.01" />
               </svg>
             </ActionButton>
 
+            {/* Like Action */}
             <ActionButton
               onClick={() => triggerLeave("right")}
-              color="rgba(34,197,94,0.88)"
-              hoverShadow="0 0 20px rgba(34,197,94,0.4)"
+              color="linear-gradient(135deg, #22c55e 0%, #15803d 100%)"
+              hoverShadow="0 4px 18px rgba(34,197,94,0.3)"
+              borderColor="rgba(34,197,94,0.4)"
               label="Liked"
             >
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
@@ -229,16 +247,15 @@ function PosterFallback({ title }: { title: string }) {
     .join("");
   return (
     <div
-      className="absolute inset-0 flex flex-col items-center justify-center gap-3"
+      className="absolute inset-0 flex flex-col items-center justify-center gap-3 select-none"
       style={{
-        background:
-          "linear-gradient(160deg, rgba(229,9,20,0.15) 0%, rgba(10,10,26,0.98) 100%)",
+        background: "linear-gradient(160deg, rgba(229,9,20,0.1) 0%, rgba(6,6,12,0.98) 100%)",
       }}
     >
-      <span className="text-6xl font-black" style={{ color: "rgba(229,9,20,0.5)" }}>
+      <span className="text-5xl font-black text-[#e50914]/40 tracking-wider">
         {initials}
       </span>
-      <span className="text-xs text-white/20 text-center px-4">{title}</span>
+      <span className="text-[10px] font-bold text-white/20 tracking-wider uppercase text-center px-4">{title}</span>
     </div>
   );
 }
@@ -248,6 +265,7 @@ function ActionButton({
   onClick,
   color,
   hoverShadow,
+  borderColor,
   label,
   small = false,
 }: {
@@ -255,6 +273,7 @@ function ActionButton({
   onClick: () => void;
   color: string;
   hoverShadow: string;
+  borderColor: string;
   label: string;
   small?: boolean;
 }) {
@@ -262,12 +281,12 @@ function ActionButton({
   return (
     <motion.button
       onClick={onClick}
-      whileHover={{ scale: 1.12, boxShadow: hoverShadow }}
+      whileHover={{ scale: 1.1, boxShadow: hoverShadow, borderColor: borderColor }}
       whileTap={{ scale: 0.92 }}
       title={label}
       aria-label={label}
-      className={`${size} rounded-full flex items-center justify-center text-white`}
-      style={{ background: color, border: "2px solid rgba(255,255,255,0.08)" }}
+      className={`${size} rounded-full flex items-center justify-center text-white border transition-all duration-300 cursor-pointer shadow-md`}
+      style={{ background: color, borderColor: "rgba(255,255,255,0.06)" }}
     >
       {children}
     </motion.button>

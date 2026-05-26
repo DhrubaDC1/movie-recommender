@@ -135,7 +135,7 @@ function ResultsContent() {
   const topBackdrop = recommendations[0]?.backdrop_url ?? null;
 
   return (
-    <main className="min-h-screen pb-28">
+    <main className="min-h-screen pb-32 bg-[#030308] selection:bg-[#e50914]/30 selection:text-white">
       <HeroBackground overridePoster={topBackdrop} />
       <NavBar
         onBack={async () => {
@@ -156,37 +156,44 @@ function ResultsContent() {
         }
       />
 
-      <div className="relative z-10 max-w-4xl mx-auto px-6">
+      <div className="relative z-10 max-w-4xl mx-auto px-4 md:px-6">
         {/* Loading */}
         {state === "loading" && (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
-              className="w-12 h-12 rounded-full border-2 border-white/10 border-t-red-500"
-            />
+          <div className="flex flex-col items-center justify-center min-h-[65vh] gap-6 select-none">
+            <div className="relative flex items-center justify-center">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1.4, ease: "linear" }}
+                className="w-14 h-14 rounded-full border-2 border-white/5 border-t-[#e50914] shadow-[0_0_20px_rgba(229,9,20,0.2)]"
+              />
+              <div className="absolute w-6 h-6 rounded-full bg-[#e50914]/10 animate-pulse" />
+            </div>
             <div className="text-center space-y-2">
-              <p className="text-white/60 text-sm">Analyzing your taste profile…</p>
-              <p className="text-white/30 text-xs">Running RAG pipeline + LLM reasoning</p>
+              <p className="text-white/60 text-sm font-bold tracking-wider uppercase">Analyzing your taste profile…</p>
+              <p className="text-white/30 text-xs font-semibold tracking-wide">Running RAG pipeline + LLM reasoning</p>
             </div>
           </div>
         )}
 
         {/* Error */}
         {state === "error" && (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center">
-            <p className="text-4xl">🎬</p>
-            <p className="text-white/70">{errorMsg}</p>
+          <div className="flex flex-col items-center justify-center min-h-[65vh] gap-5 text-center max-w-sm mx-auto px-6 py-10 rounded-3xl glass-satin border border-white/[0.08]">
+            <p className="text-4xl animate-bounce">🎬</p>
+            <h3 className="text-lg font-extrabold text-white">Oops, something happened</h3>
+            <p className="text-white/50 text-xs leading-relaxed font-semibold">{errorMsg}</p>
             <button
               onClick={() => fetchRecs()}
-              className="mt-2 px-6 py-2.5 rounded-full text-sm font-semibold text-white"
-              style={{ background: "rgba(229,9,20,0.8)" }}
+              className="mt-3 px-8 py-3 rounded-2xl text-xs font-extrabold tracking-widest uppercase text-white cursor-pointer shadow-lg hover:scale-[1.02] transition-transform duration-300"
+              style={{
+                background: "linear-gradient(135deg, #e50914 0%, #a3000b 100%)",
+                boxShadow: "0 4px 15px rgba(229,9,20,0.3)"
+              }}
             >
               Try Again
             </button>
             <button
               onClick={() => router.push("/")}
-              className="text-sm text-white/30 hover:text-white/60 transition-colors"
+              className="text-xs font-bold tracking-wider uppercase text-white/30 hover:text-[#e50914] transition-colors mt-1 cursor-pointer"
             >
               ← Start Over
             </button>
@@ -196,37 +203,41 @@ function ResultsContent() {
         {/* Success */}
         <AnimatePresence>
           {state === "success" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <div className="pt-4 pb-8 text-center">
+            <motion.div 
+              initial={{ opacity: 0, y: 15 }} 
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <div className="pt-6 pb-10 text-center max-w-2xl mx-auto select-none">
                 <motion.p
-                  initial={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="text-xs tracking-[0.3em] uppercase mb-3"
-                  style={{ color: "#e50914" }}
+                  className="text-[10px] tracking-[0.35em] uppercase mb-4.5 font-black"
+                  style={{ color: "var(--color-accent)" }}
                 >
                   Curated for you
                 </motion.p>
                 <motion.h1
-                  initial={{ opacity: 0, y: 12 }}
+                  initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
-                  className="text-4xl md:text-5xl font-bold text-gradient"
+                  className="text-4xl md:text-5xl font-extrabold text-gradient leading-tight tracking-tight"
                 >
                   {recommendations.length} Films Chosen for You
                 </motion.h1>
                 <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="text-sm text-white/35 mt-3"
+                  transition={{ delay: 0.25 }}
+                  className="text-xs md:text-sm text-white/40 mt-4 leading-relaxed font-semibold"
                 >
                   {user
-                    ? "Rate the ones you've watched — they'll shape your next discovery"
-                    : "Sign in to save your ratings and improve future recommendations"}
+                    ? "Rate the films you have watched — they will directly shape your next discovery round"
+                    : "Sign in to save your history permanently and improve future recommendations"}
                 </motion.p>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-5">
                 {recommendations.map((rec, i) => (
                   <RecommendationCard
                     key={`${rec.title}-${i}`}
@@ -249,9 +260,9 @@ function ResultsContent() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="text-center text-xs text-white/20 mt-8"
+                    className="text-center text-[10px] font-bold tracking-widest uppercase text-white/20 mt-10 select-none animate-pulse"
                   >
-                    👆 Rate movies you&apos;ve watched to unlock Rediscovery
+                    👆 Rate movies you have watched to unlock Rediscovery
                   </motion.p>
                 )}
               </AnimatePresence>
@@ -259,8 +270,8 @@ function ResultsContent() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.9 }}
-                className="mt-10 flex justify-center"
+                transition={{ delay: 0.7 }}
+                className="mt-12 flex justify-center"
               >
                 <button
                   onClick={async () => {
@@ -268,8 +279,7 @@ function ResultsContent() {
                     await logger.flush();
                     router.push("/");
                   }}
-                  className="px-8 py-3 rounded-full text-sm font-semibold text-white/40 hover:text-white/70 transition-colors"
-                  style={{ border: "1px solid rgba(255,255,255,0.08)" }}
+                  className="px-10 py-3 rounded-2xl text-xs font-bold tracking-widest uppercase text-white/40 hover:text-white/70 hover:bg-white/5 transition-all duration-300 border border-white/[0.08] cursor-pointer"
                 >
                   ← Start fresh
                 </button>
@@ -293,11 +303,11 @@ export default function ResultsPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center">
+        <main className="h-svh flex items-center justify-center bg-[#030308]">
           <HeroBackground />
           <div className="flex flex-col items-center gap-4">
-            <div className="w-10 h-10 rounded-full border-2 border-white/10 border-t-red-500 animate-spin" />
-            <p className="text-white/40 text-sm">Loading…</p>
+            <div className="w-10 h-10 rounded-full border-2 border-white/5 border-t-red-500 animate-spin" />
+            <p className="text-white/40 text-sm font-semibold tracking-wider uppercase">Loading Curations…</p>
           </div>
         </main>
       }

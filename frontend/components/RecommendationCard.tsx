@@ -14,16 +14,16 @@ function PosterFallback({ title }: { title: string }) {
     .join("");
   return (
     <div
-      className="w-full h-full flex flex-col items-center justify-center gap-2"
+      className="w-full h-full flex flex-col items-center justify-center gap-2 select-none"
       style={{
-        background: "linear-gradient(160deg, rgba(229,9,20,0.18) 0%, rgba(10,10,26,0.9) 100%)",
+        background: "linear-gradient(160deg, rgba(229,9,20,0.1) 0%, rgba(6,6,12,0.95) 100%)",
         minHeight: "240px",
       }}
     >
-      <span className="text-4xl font-bold" style={{ color: "rgba(229,9,20,0.6)" }}>
+      <span className="text-3xl font-extrabold text-[#e50914]/50 tracking-wider">
         {initials}
       </span>
-      <span className="text-[10px] text-white/20 text-center px-2 leading-tight">{title}</span>
+      <span className="text-[9px] font-bold text-white/20 text-center px-3 leading-tight tracking-wider uppercase">{title}</span>
     </div>
   );
 }
@@ -53,6 +53,27 @@ export default function RecommendationCard({
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
+  // Mouse move states for soft 3D rotation effect
+  const [rotateX, setRotateX] = useState(0);
+  const [rotateY, setRotateY] = useState(0);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const card = cardRef.current;
+    const box = card.getBoundingClientRect();
+    const x = e.clientX - box.left - box.width / 2;
+    const y = e.clientY - box.top - box.height / 2;
+    
+    // Cap rotation at a very subtle, premium 3 degrees
+    setRotateX(-y / (box.height / 6));
+    setRotateY(x / (box.width / 6));
+  };
+
+  const handleMouseLeave = () => {
+    setRotateX(0);
+    setRotateY(0);
+  };
+
   useEffect(() => {
     if (!onView || !cardRef.current) return;
     const observer = new IntersectionObserver(
@@ -69,7 +90,6 @@ export default function RecommendationCard({
   }, [onView]);
 
   const handleFeedback = (opinion: "liked" | "disliked") => {
-    // Toggle off if already selected
     if (feedback === opinion) return;
     onFeedback(rec.title, opinion);
   };
@@ -77,56 +97,96 @@ export default function RecommendationCard({
   return (
     <motion.div
       ref={cardRef}
-      initial={{ opacity: 0, y: 40 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: index * 0.12, ease: "easeOut" }}
-      whileHover={{ y: -4 }}
-      className="relative flex gap-5 rounded-2xl overflow-hidden group"
-      style={{
-        background: "rgba(14, 14, 26, 0.75)",
-        backdropFilter: "blur(24px)",
-        border: feedback
-          ? feedback === "liked"
-            ? "1px solid rgba(34,197,94,0.4)"
-            : "1px solid rgba(239,68,68,0.4)"
-          : "1px solid rgba(255,255,255,0.07)",
-        transition: "border-color 0.3s, box-shadow 0.3s",
+      initial={{ opacity: 0, y: 32 }}
+      animate={{ 
+        opacity: 1, 
+        y: 0,
+        rotateX: rotateX,
+        rotateY: rotateY,
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      transition={{ 
+        type: "spring",
+        stiffness: 260,
+        damping: 30,
+        delay: index * 0.1,
+      }}
+      whileHover={{ 
+        scale: 1.01,
+        borderColor: feedback 
+          ? feedback === "liked" 
+            ? "rgba(34,197,94,0.45)" 
+            : "rgba(239,68,68,0.45)"
+          : "rgba(255, 255, 255, 0.15)",
         boxShadow: feedback
           ? feedback === "liked"
-            ? "0 8px 40px rgba(34,197,94,0.1)"
-            : "0 8px 40px rgba(239,68,68,0.1)"
-          : "none",
+            ? "0 15px 40px -10px rgba(34,197,94,0.18), 0 4px 20px rgba(0,0,0,0.6)"
+            : "0 15px 40px -10px rgba(239,68,68,0.18), 0 4px 20px rgba(0,0,0,0.6)"
+          : "0 15px 45px -12px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.08)",
+      }}
+      className="relative flex flex-col sm:flex-row gap-5 rounded-3xl overflow-hidden group border"
+      style={{
+        background: "linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.005) 100%), rgba(7, 7, 15, 0.65)",
+        backdropFilter: "blur(40px)",
+        WebkitBackdropFilter: "blur(40px)",
+        borderColor: feedback
+          ? feedback === "liked"
+            ? "rgba(34,197,94,0.3)"
+            : "rgba(239,68,68,0.3)"
+          : "rgba(255,255,255,0.06)",
+        boxShadow: feedback
+          ? feedback === "liked"
+            ? "0 10px 35px -10px rgba(34,197,94,0.12), inset 0 1px 1px rgba(255,255,255,0.08)"
+            : "0 10px 35px -10px rgba(239,68,68,0.12), inset 0 1px 1px rgba(255,255,255,0.08)"
+          : "0 10px 30px -10px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255,255,255,0.08)",
+        transformStyle: "preserve-3d",
+        perspective: 1000,
+        transition: "border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
       {/* Rank badge */}
       <div
-        className="absolute top-4 left-4 z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-        style={{ background: "rgba(229,9,20,0.85)", color: "#fff" }}
+        className="absolute top-4 left-4 z-20 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shadow-lg border border-white/[0.08] select-none"
+        style={{ 
+          background: "linear-gradient(135deg, #e50914 0%, #a3000b 100%)", 
+          color: "#fff",
+          boxShadow: "0 4px 12px rgba(229,9,20,0.4)"
+        }}
       >
         {rec.rank}
       </div>
 
-      {/* Poster */}
-      <div className="flex-shrink-0 w-[130px] md:w-[175px] self-stretch overflow-hidden relative">
+      {/* Poster wrapper */}
+      <div 
+        className="flex-shrink-0 w-full sm:w-[150px] md:w-[185px] self-stretch overflow-hidden relative min-h-[220px] sm:min-h-0 border-b sm:border-b-0 sm:border-r"
+        style={{ borderColor: "rgba(255, 255, 255, 0.05)" }}
+      >
         {rec.poster_url && !imgError ? (
           <>
-            {/* Shimmer shown until image finishes loading */}
+            {/* Shimmer */}
             {!imgLoaded && (
               <div
-                className="absolute inset-0 animate-pulse"
-                style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%)", minHeight: "240px" }}
+                className="absolute inset-0 animate-pulse bg-gradient-to-r from-white/[0.02] via-white/[0.06] to-white/[0.02]"
+                style={{ minHeight: "240px" }}
               />
             )}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={rec.poster_url}
               alt={rec.title}
-              className="w-full h-full object-cover"
-              style={{ minHeight: "240px", opacity: imgLoaded ? 1 : 0, transition: "opacity 0.3s" }}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-[0.16,1,0.3,1] select-none"
+              style={{ 
+                minHeight: "240px", 
+                opacity: imgLoaded ? 1 : 0, 
+                transition: "opacity 0.4s, transform 0.7s cubic-bezier(0.16, 1, 0.3, 1)" 
+              }}
               loading="lazy"
               onLoad={() => setImgLoaded(true)}
               onError={() => setImgError(true)}
             />
+            {/* Ambient vignette overlay on the poster itself */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
           </>
         ) : (
           <PosterFallback title={rec.title} />
@@ -134,11 +194,11 @@ export default function RecommendationCard({
       </div>
 
       {/* Content */}
-      <div className="flex-1 py-5 pr-5 flex flex-col justify-between gap-3">
-        <div className="space-y-2">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <h3 className="text-xl font-bold text-white leading-tight">{rec.title}</h3>
-            {rec.year && <span className="text-sm text-white/40 flex-shrink-0">{rec.year}</span>}
+      <div className="flex-1 p-5 md:py-6 md:pr-6 flex flex-col justify-between gap-4">
+        <div className="space-y-3">
+          <div className="flex items-baseline gap-2.5 flex-wrap">
+            <h3 className="text-lg md:text-xl font-extrabold text-white leading-snug tracking-tight">{rec.title}</h3>
+            {rec.year && <span className="text-xs font-bold text-white/35 bg-white/[0.03] px-2 py-0.5 rounded border border-white/[0.03]">{rec.year}</span>}
           </div>
 
           {genres.length > 0 && (
@@ -146,11 +206,11 @@ export default function RecommendationCard({
               {genres.map((g) => (
                 <span
                   key={g}
-                  className="text-xs px-2.5 py-0.5 rounded-full"
+                  className="text-[10px] font-bold px-2.5 py-0.75 rounded-md tracking-wider uppercase select-none"
                   style={{
-                    background: "rgba(255,255,255,0.07)",
-                    color: "rgba(255,255,255,0.5)",
-                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: "rgba(255,255,255,0.03)",
+                    color: "rgba(255,255,255,0.45)",
+                    border: "1px solid rgba(255,255,255,0.05)",
                   }}
                 >
                   {g}
@@ -160,35 +220,39 @@ export default function RecommendationCard({
           )}
 
           {rec.imdb_rating && (
-            <div className="flex items-center gap-1.5">
-              <span style={{ color: "#f5c518" }} className="text-sm">★</span>
-              <span className="text-sm font-semibold text-white/80">{rec.imdb_rating}</span>
-              <span className="text-xs text-white/30">IMDB</span>
+            <div className="flex items-center gap-1.5 select-none">
+              <span style={{ color: "#f5c518" }} className="text-xs">★</span>
+              <span className="text-xs font-bold text-white/80">{rec.imdb_rating}</span>
+              <span className="text-[9px] font-extrabold text-[#f5c518]/70 border border-[#f5c518]/20 px-1.5 py-0.25 rounded bg-[#f5c518]/5 tracking-widest uppercase">IMDB</span>
             </div>
           )}
         </div>
 
+        {/* AI Explanation Box */}
         <div
-          className="py-3 px-4 rounded-lg"
+          className="py-3.5 px-4.5 rounded-2xl"
           style={{
-            background: "rgba(255,255,255,0.03)",
-            borderLeft: "2px solid rgba(229,9,20,0.5)",
+            background: "rgba(255,255,255,0.02)",
+            borderLeft: "3px solid #e50914",
+            boxShadow: "inset 0 1px 2px rgba(0,0,0,0.15)",
           }}
         >
-          <p className="text-sm leading-relaxed italic text-white/65">{rec.explanation}</p>
+          <p className="text-xs md:text-sm leading-relaxed italic text-white/60 font-medium">{rec.explanation}</p>
         </div>
 
-        <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center justify-between flex-wrap gap-3.5 pt-1">
           <StreamingBadge providers={rec.streaming} />
 
           {/* 👍 / 👎 feedback buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-xs text-white/25 mr-1">Watched it?</span>
+          <div className="flex items-center gap-2 flex-shrink-0 select-none">
+            <span className="text-[10px] font-bold tracking-wider text-white/20 uppercase mr-1">Watched it?</span>
             <FeedbackButton
               emoji="👍"
               label="Loved it"
               active={feedback === "liked"}
-              activeColor="rgba(34,197,94,0.85)"
+              activeColor="linear-gradient(135deg, #22c55e 0%, #15803d 100%)"
+              glowColor="rgba(34,197,94,0.3)"
+              borderColor="rgba(34,197,94,0.3)"
               onClick={() => handleFeedback("liked")}
               disabled={saving}
             />
@@ -196,7 +260,9 @@ export default function RecommendationCard({
               emoji="👎"
               label="Didn't like it"
               active={feedback === "disliked"}
-              activeColor="rgba(239,68,68,0.85)"
+              activeColor="linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)"
+              glowColor="rgba(239,68,68,0.3)"
+              borderColor="rgba(239,68,68,0.3)"
               onClick={() => handleFeedback("disliked")}
               disabled={saving}
             />
@@ -208,12 +274,14 @@ export default function RecommendationCard({
 }
 
 function FeedbackButton({
-  emoji, label, active, activeColor, onClick, disabled,
+  emoji, label, active, activeColor, glowColor, borderColor, onClick, disabled,
 }: {
   emoji: string;
   label: string;
   active: boolean;
   activeColor: string;
+  glowColor: string;
+  borderColor: string;
   onClick: () => void;
   disabled?: boolean;
 }) {
@@ -221,14 +289,28 @@ function FeedbackButton({
     <motion.button
       onClick={onClick}
       disabled={disabled}
-      whileHover={!disabled ? { scale: 1.15 } : {}}
-      whileTap={!disabled ? { scale: 0.9 } : {}}
+      whileHover={!disabled ? { scale: 1.12, y: -1 } : {}}
+      whileTap={!disabled ? { scale: 0.92 } : {}}
       title={label}
-      className="w-9 h-9 rounded-full flex items-center justify-center text-base transition-all duration-200 disabled:opacity-50"
+      className="w-9 h-9 rounded-xl flex items-center justify-center text-sm transition-all duration-300 disabled:opacity-40 cursor-pointer"
       style={{
-        background: active ? activeColor : "rgba(255,255,255,0.07)",
-        border: active ? "none" : "1px solid rgba(255,255,255,0.1)",
-        boxShadow: active ? `0 0 16px ${activeColor}` : "none",
+        background: active ? activeColor : "rgba(255,255,255,0.03)",
+        border: active ? "1px solid rgba(255,255,255,0.15)" : "1px solid rgba(255,255,255,0.05)",
+        boxShadow: active ? `0 4px 15px ${glowColor}` : "none",
+      }}
+      onMouseEnter={(e) => {
+        if (!active && !disabled) {
+          e.currentTarget.style.borderColor = borderColor;
+          e.currentTarget.style.boxShadow = `0 0 10px ${glowColor}`;
+          e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active && !disabled) {
+          e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)";
+          e.currentTarget.style.boxShadow = "none";
+          e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)";
+        }
       }}
     >
       {emoji}
