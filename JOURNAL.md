@@ -410,3 +410,52 @@ Lesson: A language filter only works if all three of (retrieval, sorting, LLM vi
 
 ---
 
+
+## 2026-05-26 — Day 1 (night, continued)
+
+### 21:00 — Feature 8: Real-time TMDB Discovery (replaces ChromaDB + IMDB CSV)
+
+The core problem: the IMDB Top 1000 CSV is static and old. No 2023 or 2024 film could ever appear. The entire retrieval step has been replaced with TMDB's live `/discover/movie` API.
+
+**Old pipeline:**
+```
+liked titles → E5 embed → ChromaDB ANN (IMDB Top 1000 only) → IMDB metadata → LLM rank
+```
+
+**New pipeline:**
+```
+liked titles → TMDB genre+keyword lookup (parallel)
+             → TMDB /discover/movie (real-time, millions of movies)
+             → quality rerank (vote_average + vote_count + popularity)
+             → streaming enrich (parallel)
+             → LLM comparative + CoT rank
+```
+
+**`tmdb_client.py` — three new methods:**
+- `get_movie_meta(title)` — searches TMDB for a liked movie and returns its `genre_ids` + `keyword_ids` (via the keywords endpoint). Used to seed the discover call.
+- `discover_movies(genre_ids, keyword_ids, language_code, page)` — calls `/discover/movie` with OR-combined genre and keyword filters, sorted by popularity. Returns fully-formatted dicts (poster, backdrop, year, genre string, language, vote scores) from the search result alone — no extra detail API call.
+- `enrich_with_streaming(tmdb_id)` — fetches streaming providers only (replaces the heavier `_enrich` call that also fetched genres we no longer need).
+- Added `TMDB_GENRES` hardcoded dict (19 entries) — maps genre IDs to names without an API call.
+
+**`reranker.py` — new `rerank_tmdb` method:**
+- Replaces IMDB/Metascore scoring with TMDB fields: `vote_average` (50%) + `vote_count` (30%) + `popularity` (20%). All log-normalized before combining.
+
+**`main.py` — major refactor:**
+- Removed `Embedder` and `VectorStore` from lifespan — saves ~500 MB RAM at startup.
+- Step 1: parallel `get_movie_meta()` for up to 3 liked movies.
+- Step 2: parallel `discover_movies()` — one request per language per page (2 pages each).
+- Fallback: if keyword filter returns too few results, retry with genre-only.
+- Step 3: dedup by `tmdb_id`, filter mentioned movies.
+- Step 4: `rerank_tmdb()` + language soft-sort.
+- Step 5: parallel `enrich_with_streaming()` for top N*2 candidates.
+- Step 6: LLM ranking (unchanged).
+
+**What this unlocks:**
+- Latest releases (TMDB discover returns current movies sorted by popularity)
+- Any language's catalogue — Hindi, Bangla, Korean, French, etc. (TMDB native filter)
+- Faster startup (no 500 MB embedding model load)
+- More semantically relevant results (keyword-based genre matching is more precise than vector similarity over a 1000-movie set)
+
+**Caveat:** The IMDB CSV + ChromaDB setup (`setup_vectordb.py`) still works if you want the old approach — the code is untouched, just not used by the server anymore.
+
+---
