@@ -21,13 +21,29 @@ Initialized git, created the GitHub repo, wrote this journal. Let's go.
 
 **Feature order:**
 1. ✅ Project foundation (structure, configs, envs)
-2. Backend: FastAPI + health check
-3. Backend: TMDB client (movie search/autocomplete)
-4. Backend: ChromaDB + embeddings (vector store)
-5. Backend: LLM engine (Groq + comparative prompting + CoT)
-6. Backend: Full `/recommend` endpoint
-7. Frontend: Landing page (hero background, preference input)
-8. Frontend: Results page (recommendation cards, streaming badges)
+2. ✅ Backend: FastAPI + all recommender modules
+3. Frontend: Landing page (hero background, preference input)
+4. Frontend: Results page (recommendation cards, streaming badges)
+
+---
+
+### 09:45 — Feature 2: Backend — FastAPI server + all recommender modules
+
+Sat down after coffee and knocked out the entire backend in one shot:
+
+- `main.py` — FastAPI app with lifespan service loading, CORS, three routes (`/health`, `/search-movies`, `/recommend`)
+- `recommender/tmdb_client.py` — async HTTPX client for TMDB search, movie details, watch providers
+- `recommender/embedder.py` — E5 sentence-transformer with proper `query:` / `passage:` prefixes
+- `recommender/vector_store.py` — ChromaDB persistent collection with cosine distance
+- `recommender/reranker.py` — two-stage hybrid scoring (semantic 70% + quality 30%)
+- `recommender/llm_engine.py` — Groq async client with comparative + CoT prompt, JSON extraction
+- `setup_vectordb.py` — one-time ingestion script for IMDB Top 1000 CSV
+
+**Challenge**: ChromaDB returns cosine *distance* (0–2), not similarity. Had to convert: `similarity = 1.0 - distance`. Easy fix once spotted.
+
+**Also**: The Groq response sometimes wraps JSON in markdown code fences. Added a regex fallback `re.search(r"\[.*\]", text, re.DOTALL)` in `_parse_json` to handle it gracefully.
+
+Syntax-checked all files — all clean. Committing.
 
 ---
 
