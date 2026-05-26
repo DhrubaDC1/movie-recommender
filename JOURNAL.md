@@ -177,6 +177,24 @@ Build: TypeScript clean, Next.js static build passes.
 
 ---
 
+### 17:30 — Hotfix: passlib/bcrypt incompatibility (PR #7)
+
+First real run of the server crashed on `POST /auth/signup` with 500. Root cause: `passlib 1.7.4` (abandoned since 2020) is incompatible with `bcrypt 4.x`. Two symptoms in the traceback:
+- `AttributeError: module 'bcrypt' has no attribute '__about__'` — printed as a warning on every startup
+- `ValueError: password cannot be longer than 72 bytes` — raised during passlib's internal bcrypt wrap-bug detection test, crashing signup entirely
+
+Fix: dropped passlib entirely. `bcrypt` directly needs only two lines:
+```python
+bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()  # hash
+bcrypt.checkpw(plain.encode(), hashed.encode())           # verify
+```
+
+Verified: correct password → True, wrong password → False. Server now starts clean.
+
+Lesson: don't pin abandoned libraries. passlib has had no release since 2020; the bcrypt ecosystem moved on without it.
+
+---
+
 ## 2026-05-26 — Day 1 (continued)
 
 ### 14:00 — Feature 4: Interaction & Behaviour Logging
