@@ -38,8 +38,6 @@ function ResultsContent() {
   // Track extra liked/disliked injected across rediscovery rounds
   const extraLikedRef = useRef<string[]>([]);
   const extraDislikedRef = useRef<string[]>([]);
-  // Prevent double-fire on initial mount
-  const fetchInitiatedRef = useRef(false);
 
   useEffect(() => {
     logger.init();
@@ -82,9 +80,6 @@ function ResultsContent() {
   );
 
   useEffect(() => {
-    if (fetchInitiatedRef.current) return;
-    fetchInitiatedRef.current = true;
-
     const controller = new AbortController();
     fetchRecs([], [], controller.signal);
     return () => controller.abort();
