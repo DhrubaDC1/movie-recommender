@@ -373,30 +373,23 @@ export default function GamePage() {
   );
 }
 
-// Simplified ghost card — just the poster, no interaction
+// Ghost card — purely decorative, uses absolute positioning so it never shifts
 function GhostCard({ movie }: { movie: GameMovie }) {
   return (
     <div
-      className="w-full h-full rounded-2xl overflow-hidden"
+      className="absolute inset-0 rounded-2xl overflow-hidden"
       style={{
         background: "rgba(12, 12, 22, 0.9)",
         border: "1px solid rgba(255,255,255,0.07)",
       }}
     >
-      {movie.poster_url ? (
+      {movie.poster_url && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={movie.poster_url}
           alt=""
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div
-          className="w-full h-full"
-          style={{
-            background:
-              "linear-gradient(160deg, rgba(229,9,20,0.1) 0%, rgba(10,10,26,0.95) 100%)",
-          }}
+          className="absolute inset-0 w-full h-full object-cover"
+          draggable={false}
         />
       )}
     </div>
