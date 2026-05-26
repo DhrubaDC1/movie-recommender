@@ -5,6 +5,29 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { Recommendation } from "@/lib/types";
 import StreamingBadge from "./StreamingBadge";
 
+function PosterFallback({ title }: { title: string }) {
+  const initials = title
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join("");
+  return (
+    <div
+      className="w-full h-full flex flex-col items-center justify-center gap-2"
+      style={{
+        background: "linear-gradient(160deg, rgba(229,9,20,0.18) 0%, rgba(10,10,26,0.9) 100%)",
+        minHeight: "240px",
+      }}
+    >
+      <span className="text-4xl font-bold" style={{ color: "rgba(229,9,20,0.6)" }}>
+        {initials}
+      </span>
+      <span className="text-[10px] text-white/20 text-center px-2 leading-tight">{title}</span>
+    </div>
+  );
+}
+
 export type FeedbackOpinion = "liked" | "disliked" | null;
 
 interface Props {
@@ -27,6 +50,7 @@ export default function RecommendationCard({
   const genres = rec.genre ? rec.genre.split(",").map((g) => g.trim()) : [];
   const cardRef = useRef<HTMLDivElement>(null);
   const viewFired = useRef(false);
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     if (!onView || !cardRef.current) return;
@@ -82,22 +106,18 @@ export default function RecommendationCard({
       </div>
 
       {/* Poster */}
-      <div className="flex-shrink-0 w-[120px] md:w-[160px]">
-        {rec.poster_url ? (
+      <div className="flex-shrink-0 w-[130px] md:w-[175px] self-stretch overflow-hidden">
+        {rec.poster_url && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={rec.poster_url}
             alt={rec.title}
             className="w-full h-full object-cover"
-            style={{ minHeight: "220px" }}
+            style={{ minHeight: "240px" }}
+            onError={() => setImgError(true)}
           />
         ) : (
-          <div
-            className="w-full h-full flex items-center justify-center text-white/20 text-3xl"
-            style={{ minHeight: "220px", background: "rgba(255,255,255,0.03)" }}
-          >
-            🎬
-          </div>
+          <PosterFallback title={rec.title} />
         )}
       </div>
 

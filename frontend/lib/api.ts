@@ -14,12 +14,13 @@ export async function getRecommendations(
   disliked: string[],
   numResults = 5,
   sessionId?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  languages: string[] = [],
 ): Promise<RecommendResponse> {
   const res = await fetch(`${API}/recommend`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ liked, disliked, num_results: numResults, session_id: sessionId }),
+    body: JSON.stringify({ liked, disliked, num_results: numResults, session_id: sessionId, languages }),
     signal,
   });
   if (!res.ok) {

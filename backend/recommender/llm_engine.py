@@ -14,6 +14,7 @@ RANK_PROMPT = """A user has given you their film preferences:
 
 LOVED: {liked}
 DISLIKED: {disliked}
+PREFERRED LANGUAGES: {languages}
 
 Here are {n} candidate films retrieved for them:
 
@@ -21,8 +22,9 @@ Here are {n} candidate films retrieved for them:
 
 Task:
 1. Think step by step about which films best match this user's taste based on what they loved and avoided.
-2. Rank ALL candidates from best to worst fit.
-3. For each, write a 2-sentence personalized explanation that explicitly references their liked or disliked films.
+2. If language preferences are specified, prioritise films in those languages when quality is otherwise equal.
+3. Rank ALL candidates from best to worst fit.
+4. For each, write a 2-sentence personalized explanation that explicitly references their liked or disliked films.
 
 Output ONLY a JSON array (no markdown, no extra text):
 [
@@ -50,6 +52,7 @@ class LLMEngine:
         disliked: list[str],
         candidates: list[dict],
         num_results: int = 5,
+        languages: list[str] | None = None,
     ) -> list[dict]:
         candidates_block = "\n".join(
             f"{i+1}. {c['title']} ({c.get('year', 'N/A')}) | "
@@ -62,6 +65,7 @@ class LLMEngine:
         prompt = RANK_PROMPT.format(
             liked=", ".join(liked) if liked else "None specified",
             disliked=", ".join(disliked) if disliked else "None specified",
+            languages=", ".join(languages) if languages else "Any",
             n=len(candidates),
             candidates_block=candidates_block,
         )

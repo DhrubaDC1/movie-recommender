@@ -20,6 +20,7 @@ export interface Recommendation {
   year: string;
   genre: string;
   imdb_rating: number | null;
+  original_language: string;
 }
 
 export interface RecommendResponse {

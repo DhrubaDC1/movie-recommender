@@ -94,4 +94,5 @@ class TMDBClient:
             "genre": ", ".join(genres[:3]),
             "streaming": streaming,
             "year": (movie.get("release_date") or "")[:4],
+            "original_language": movie.get("original_language", ""),
         }

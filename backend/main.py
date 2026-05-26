@@ -61,11 +61,20 @@ app.include_router(auth_router)
 
 # ── Models ─────────────────────────────────────────────────────────────────────
 
+# Map UI language names → TMDB ISO 639-1 codes
+_LANG_ISO: dict[str, str] = {
+    "English": "en",
+    "Hindi": "hi",
+    "Bangla": "bn",
+}
+
+
 class RecommendRequest(BaseModel):
     liked: list[str]
     disliked: list[str] = []
     num_results: int = 5
     session_id: Optional[str] = None
+    languages: list[str] = []   # e.g. ["English", "Hindi"]
 
 
 class LogEventsRequest(BaseModel):
@@ -173,6 +182,27 @@ async def recommend(
         tmdb_enriched.append({**c, **details})
     tmdb_ms = int((time.monotonic() - t0) * 1000)
 
+    # Language preference filtering — soft sort so we always have enough candidates.
+    if req.languages:
+        iso_wanted: set[str] = set()
+        include_others = "Others" in req.languages
+        for lang in req.languages:
+            if lang in _LANG_ISO:
+                iso_wanted.add(_LANG_ISO[lang])
+
+        def _lang_matches(movie: dict) -> bool:
+            orig = movie.get("original_language", "")
+            if orig in iso_wanted:
+                return True
+            if include_others and orig not in _LANG_ISO.values():
+                return True
+            return False
+
+        preferred = [c for c in tmdb_enriched if _lang_matches(c)]
+        rest = [c for c in tmdb_enriched if not _lang_matches(c)]
+        # Keep preferred first; fall back to rest if we'd run short
+        tmdb_enriched = preferred + rest
+
     t0 = time.monotonic()
     top_candidates = tmdb_enriched[: req.num_results * 2]
     ranked = await llm_engine.rank_and_explain(
@@ -180,6 +210,7 @@ async def recommend(
         disliked=all_disliked,
         candidates=top_candidates,
         num_results=req.num_results,
+        languages=req.languages or None,
     )
     llm_ms = int((time.monotonic() - t0) * 1000)
 
@@ -191,6 +222,7 @@ async def recommend(
         rec["year"] = match.get("year", rec.get("year"))
         rec["genre"] = match.get("genre", rec.get("genre", ""))
         rec["imdb_rating"] = match.get("imdb_rating", rec.get("imdb_rating"))
+        rec["original_language"] = match.get("original_language", "")
 
     total_ms = int((time.monotonic() - t_total) * 1000)
 
