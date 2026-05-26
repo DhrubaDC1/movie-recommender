@@ -34,6 +34,7 @@ function ResultsContent() {
   const liked = useMemo(() => searchParams.getAll("liked"), [searchParams]);
   const disliked = useMemo(() => searchParams.getAll("disliked"), [searchParams]);
   const languages = useMemo(() => searchParams.getAll("language"), [searchParams]);
+  const era = searchParams.get("era") ?? "";
   const sessionId = searchParams.get("session_id") ?? undefined;
 
   // Track extra liked/disliked injected across rediscovery rounds
@@ -57,7 +58,7 @@ function ResultsContent() {
       try {
         const allLiked = [...new Set([...liked, ...extraLiked])];
         const allDisliked = [...new Set([...disliked, ...extraDisliked])];
-        const data = await getRecommendations(allLiked, allDisliked, 5, sessionId, signal, languages);
+        const data = await getRecommendations(allLiked, allDisliked, 5, sessionId, signal, languages, era);
         const latencyMs = Math.round(performance.now() - t0);
         setRecommendations(data.recommendations);
         setFeedback({});
@@ -77,7 +78,7 @@ function ResultsContent() {
         logger.track("recommendations_error", { liked, disliked, error: msg });
       }
     },
-    [liked, disliked, languages, sessionId, router]
+    [liked, disliked, languages, era, sessionId, router]
   );
 
   useEffect(() => {
@@ -144,7 +145,13 @@ function ResultsContent() {
         }}
         subtitle={
           state === "success"
-            ? `Based on: ${liked.join(", ")}${languages.length ? ` · ${languages.join(", ")}` : ""}`
+            ? [
+                `Based on: ${liked.join(", ")}`,
+                languages.length ? languages.join(", ") : null,
+                era || null,
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : undefined
         }
       />

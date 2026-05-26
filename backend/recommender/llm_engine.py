@@ -24,6 +24,7 @@ RANK_PROMPT = """A user has given you their film preferences:
 LOVED: {liked}
 DISLIKED: {disliked}
 PREFERRED LANGUAGES: {languages}
+PREFERRED ERA: {era}
 
 Here are {n} candidate films retrieved for them:
 
@@ -32,8 +33,9 @@ Here are {n} candidate films retrieved for them:
 Task:
 1. Think step by step about which films best match this user's taste based on what they loved and avoided.
 2. LANGUAGE RULE: If PREFERRED LANGUAGES is not "Any", you MUST rank films whose Language field matches a preferred language above films that do not match, as long as a language-matching candidate exists. Only ignore this rule if no candidates at all match the preferred language.
-3. Rank ALL candidates from best to worst fit, applying both taste AND language rules.
-4. For each, write a 2-sentence personalized explanation that explicitly references their liked or disliked films.
+3. ERA RULE: If PREFERRED ERA is not "Any", prefer films whose year falls within that era. Note this as secondary to taste quality.
+4. Rank ALL candidates from best to worst fit, applying taste, language, and era rules.
+5. For each, write a 2-sentence personalized explanation that explicitly references their liked or disliked films.
 
 Output ONLY a JSON array (no markdown, no extra text).
 The "candidate_index" field MUST be the number shown before the film in the list above (1, 2, 3 …).
@@ -64,6 +66,7 @@ class LLMEngine:
         candidates: list[dict],
         num_results: int = 5,
         languages: list[str] | None = None,
+        era: str | None = None,
     ) -> list[dict]:
         candidates_block = "\n".join(
             f"{i+1}. {c['title']} ({c.get('year', 'N/A')}) | "
@@ -78,6 +81,7 @@ class LLMEngine:
             liked=", ".join(liked) if liked else "None specified",
             disliked=", ".join(disliked) if disliked else "None specified",
             languages=", ".join(languages) if languages else "Any",
+            era=era if era else "Any",
             n=len(candidates),
             candidates_block=candidates_block,
         )

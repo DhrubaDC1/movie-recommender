@@ -65,12 +65,22 @@ app.include_router(auth_router)
 
 # ── Models ─────────────────────────────────────────────────────────────────────
 
+# Era → (release_date_gte, release_date_lte)  — None means no bound
+_ERA_DATES: dict[str, tuple[Optional[str], Optional[str]]] = {
+    "Latest":    ("2022-01-01", None),
+    "2010s":     ("2010-01-01", "2019-12-31"),
+    "2000s":     ("2000-01-01", "2009-12-31"),
+    "Classics":  (None,         "1999-12-31"),
+}
+
+
 class RecommendRequest(BaseModel):
     liked: list[str]
     disliked: list[str] = []
     num_results: int = 5
     session_id: Optional[str] = None
     languages: list[str] = []   # e.g. ["English", "Hindi"]
+    era: str = ""               # "Latest" | "2010s" | "2000s" | "Classics" | "" = any
 
 
 class LogEventsRequest(BaseModel):
@@ -173,12 +183,14 @@ async def recommend(
     keyword_ids = keyword_ids[:10]
     meta_ms = int((time.monotonic() - t0) * 1000)
 
-    # ── Step 2: Determine target language codes ─────────────────────────────
+    # ── Step 2: Determine target language codes and era date bounds ────────
     lang_codes: list[str] = []
     include_others = "Others" in req.languages
     for lang in req.languages:
         if lang in _LANG_ISO:
             lang_codes.append(_LANG_ISO[lang])
+
+    date_gte, date_lte = _ERA_DATES.get(req.era, (None, None))
 
     # ── Step 3: Discover candidates from TMDB (real-time) ──────────────────
     t0 = time.monotonic()
@@ -187,7 +199,8 @@ async def recommend(
     if lang_codes:
         # One discover request per language (2 pages each) for balanced coverage
         discover_tasks = [
-            tmdb.discover_movies(top_genre_ids, keyword_ids, lang_code, page=p)
+            tmdb.discover_movies(top_genre_ids, keyword_ids, lang_code, page=p,
+                                 date_gte=date_gte, date_lte=date_lte)
             for lang_code in lang_codes
             for p in (1, 2)
         ]
@@ -197,14 +210,17 @@ async def recommend(
                 candidates.extend(res)
 
         if include_others:
-            broad = await tmdb.discover_movies(top_genre_ids, keyword_ids, page=1)
+            broad = await tmdb.discover_movies(top_genre_ids, keyword_ids, page=1,
+                                               date_gte=date_gte, date_lte=date_lte)
             known_iso = set(_LANG_ISO.values())
             candidates.extend(c for c in broad if c["original_language"] not in known_iso)
     else:
         # No language preference — broad discovery across 2 pages
         pages = await asyncio.gather(
-            tmdb.discover_movies(top_genre_ids, keyword_ids, page=1),
-            tmdb.discover_movies(top_genre_ids, keyword_ids, page=2),
+            tmdb.discover_movies(top_genre_ids, keyword_ids, page=1,
+                                 date_gte=date_gte, date_lte=date_lte),
+            tmdb.discover_movies(top_genre_ids, keyword_ids, page=2,
+                                 date_gte=date_gte, date_lte=date_lte),
             return_exceptions=True,
         )
         for page_res in pages:
@@ -214,7 +230,8 @@ async def recommend(
     # Fallback: if discover returned too few results (niche genre+keyword), retry genre-only
     if len(candidates) < req.num_results:
         fallback_tasks = [
-            tmdb.discover_movies(top_genre_ids, [], lc if lang_codes else None, page=1)
+            tmdb.discover_movies(top_genre_ids, [], lc if lang_codes else None, page=1,
+                                 date_gte=date_gte, date_lte=date_lte)
             for lc in (lang_codes or [None])
         ]
         for res in await asyncio.gather(*fallback_tasks, return_exceptions=True):
@@ -281,6 +298,7 @@ async def recommend(
         candidates=top_candidates,
         num_results=req.num_results,
         languages=req.languages or None,
+        era=req.era or None,
     )
     llm_ms = int((time.monotonic() - t0) * 1000)
 
@@ -327,6 +345,7 @@ async def recommend(
             "liked": req.liked,
             "disliked": req.disliked,
             "languages": req.languages,
+            "era": req.era,
             "history_liked_injected": extra_liked,
             "history_disliked_injected": extra_disliked,
             "user_id": user["id"] if user else None,

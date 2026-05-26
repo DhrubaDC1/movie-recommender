@@ -91,6 +91,8 @@ class TMDBClient:
         language_code: Optional[str] = None,
         page: int = 1,
         min_votes: int = 50,
+        date_gte: Optional[str] = None,   # "YYYY-MM-DD"
+        date_lte: Optional[str] = None,   # "YYYY-MM-DD"
     ) -> list[dict]:
         """Discover movies via TMDB /discover/movie (always current data)."""
         params: dict = {
@@ -106,6 +108,10 @@ class TMDBClient:
             params["with_keywords"] = "|".join(str(k) for k in keyword_ids)
         if language_code:
             params["with_original_language"] = language_code
+        if date_gte:
+            params["primary_release_date.gte"] = date_gte
+        if date_lte:
+            params["primary_release_date.lte"] = date_lte
 
         r = await self._client.get(
             f"{TMDB_BASE}/discover/movie", params=self._params(**params)
