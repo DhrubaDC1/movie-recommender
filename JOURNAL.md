@@ -108,6 +108,34 @@ Day 1 complete. Ship it. 🎬
 
 ---
 
+## 2026-05-26 — Day 1 (evening)
+
+### 15:30 — Feature 5: User Auth System (JWT + httpOnly cookies)
+
+Two new features requested: auth system + post-recommendation feedback loop. Starting with auth — everything else builds on top of it.
+
+**Backend:**
+- `db.py` — added `users` table (id, email, username, password_hash, created_at) and `movie_feedback` table (user_id, movie_title, opinion, source, timestamp). Added full CRUD: `create_user`, `get_user_by_email/id/username`, `upsert_movie_feedback`, `get_user_feedback_history`. UNIQUE index on (user_id, movie_title) so rating a movie twice updates rather than duplicates.
+- `auth.py` — JWT with `python-jose` (HS256, 7-day expiry), bcrypt password hashing via `passlib`. Routes: POST /auth/signup, POST /auth/login, POST /auth/logout, GET /auth/me. Tokens stored in httpOnly cookies so JS can't read them (XSS-safe). Two FastAPI dependencies: `get_current_user` (raises 401) and `get_optional_user` (returns None).
+- `main.py` — CORS updated with `allow_credentials=True` (required for cookies). Auth router included. `/recommend` now uses `get_optional_user` — if logged in, it fetches up to 5 historical liked + 3 historical disliked movies and merges them into the query, so results improve with every session.
+- Added `POST /user/feedback` and `GET /user/history` routes.
+
+**Frontend:**
+- `lib/auth.ts` — all auth API calls with `credentials: "include"` so cookies are sent
+- `contexts/AuthContext.tsx` — React context: hydrates from `/auth/me` on mount, exposes login/signup/logout
+- `components/AuthModal.tsx` — glassmorphism modal, tabbed Sign In / Create Account, field focus animations, error display
+- `components/NavBar.tsx` — shared nav for both pages: logo, auth state (avatar + username + sign out, or Sign in / Join free buttons)
+- `app/layout.tsx` — wrapped with `<AuthProvider>`
+- `app/page.tsx` — uses `NavBar`, fetches history on login and pre-fills liked/disliked tags, welcome message for returning users
+
+**Challenge**: `allow_credentials=True` in CORS requires `allow_origins` to be explicit (not `*`). Already had explicit origins, so no change needed — just adding the flag was enough.
+
+**What this unlocks**: Every recommend call now merges the user's historical opinions into the query. First session is cold-start; by session 3-4, the system knows them well.
+
+Build: TypeScript clean, Next.js static build passes.
+
+---
+
 ## 2026-05-26 — Day 1 (continued)
 
 ### 14:00 — Feature 4: Interaction & Behaviour Logging
