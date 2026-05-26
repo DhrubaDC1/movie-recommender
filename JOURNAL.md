@@ -616,3 +616,39 @@ The action buttons are inside the card (bottom section) so they're part of the d
 Build: TypeScript 0 errors. Next.js static build: `/game` prerendered. Merged to `main`.
 
 ---
+
+## 2026-05-27 — Day 2
+
+### 01:10 — Feature 11: Cinematic UI/UX Overhaul & The Satin-Glass Experience
+
+Took a hard look at the layout and went all-in on premium cinematic aesthetics, responsiveness, and a dynamic real-time theme switcher drawer.
+
+**What got built:**
+
+**1. Premium Glassmorphism & Micro-Animations (`globals.css` + custom components)**
+- Integrated a new `.glass-satin` layer using modern sub-elements, backdrop-blur (`40px`), linear border lighting, and deep dynamic dropshadows (`0 10px 40px -10px rgba(0,0,0,0.7)`).
+- Re-architected backgrounds with dynamic mesh gradients using HSL tokens (`--color-orb-1`, `--color-orb-2`, `--color-orb-3`) that drift ambiently using CSS keyframe animations (`drift-orb-1`, `drift-orb-2`, etc.).
+- Broadened active state feedback with subtle theme accent glow pulses (`animate-pulse-glow`).
+
+**2. Real-Time Persistent Themes (`ThemeContext.tsx` + `NavBar.tsx`)**
+- Implemented `ThemeContext` to manage dynamic appearance settings. Persists the user's choice in browser `localStorage` and applies theme-specific HSL overrides directly to the `body` class (`theme-classic`, `theme-cyberpunk`, `theme-gold`, `theme-aurora`).
+- **Classic Cinema Red:** Rich velvet void with iconic theater crimson.
+- **Cyberpunk Void:** High-contrast glacial teal accents with cyber-magenta stars and twilight glass.
+- **Golden Slate:** Deep volcanic charcoal plates with champagne-gold highlights.
+- **Aurora Jade:** Quiet polar midnight greens with boreal emerald and cyan rings.
+- Built a floating Settings Cog inside `NavBar` that slides out an elegant glass Appearance settings drawer allowing live, flicker-free real-time theme previews. Prevented Next.js hydration flashes by using visibility guards.
+
+**3. "No-Scroll" Viewport Lock (`100svh` Constraints)**
+- Locked the HomePage (`app/page.tsx`) and GamePage (`app/game/page.tsx`) to exactly single-screen heights (`h-svh` / `overflow-hidden`), guaranteeing zero browser scrollbars on any mobile or desktop screen.
+- Converted language and era filter feeds into compact, single-row horizontally scrollable pill channels (`no-scrollbar`).
+- Compressed vertical grid spacings and margins to deliver a tight, application-like experience.
+- Left the ResultsPage (`app/results/page.tsx`) fully scrollable vertically to maintain the highly legible and scannable list comparison layout (reverted a horizontal slider attempt per user preference).
+
+**4. Liquid Glass Scrollbars (Global & Tag Grids)**
+- Custom-styled all nested elements globally using `*::-webkit-webkit-scrollbar` with a completely transparent track, thin `6px` padding border clips, white glassy reflection bezels, and theme-accent glows on hover.
+- **Bug Fix:** Discovered that Chromium-based browsers completely ignore custom WebKit scrollbar pseudos if an element carries `scrollbar-thin` (which compiles to standard `scrollbar-width: thin`). Removed `scrollbar-thin` from the Loved/Disliked grid wrapper elements in `page.tsx`, bringing the gorgeous translucent theme-aware scrollbars to the preference tags lists.
+
+All changes verified: Next.js compiled cleanly in `1360ms`, TypeScript check passed with 0 errors, and functional parity is preserved 100%.
+
+---
+
