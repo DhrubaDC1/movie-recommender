@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import os
 
-load_dotenv()
+load_dotenv(".env.local")
 
 from recommender.tmdb_client import TMDBClient
 from recommender.embedder import Embedder
