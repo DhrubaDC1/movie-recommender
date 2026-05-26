@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import type { Recommendation } from "@/lib/types";
 import StreamingBadge from "./StreamingBadge";
@@ -7,16 +8,35 @@ import StreamingBadge from "./StreamingBadge";
 interface Props {
   rec: Recommendation;
   index: number;
+  onView?: () => void;
 }
 
-export default function RecommendationCard({ rec, index }: Props) {
+export default function RecommendationCard({ rec, index, onView }: Props) {
   const genres = rec.genre ? rec.genre.split(",").map((g) => g.trim()) : [];
+  const cardRef = useRef<HTMLElement>(null);
+  const viewFired = useRef(false);
+
+  useEffect(() => {
+    if (!onView || !cardRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !viewFired.current) {
+          viewFired.current = true;
+          onView();
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [onView]);
 
   return (
     <motion.article
       initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: index * 0.12, ease: "easeOut" }}
+      ref={cardRef as React.Ref<HTMLDivElement>}
       whileHover={{ y: -4 }}
       className="relative flex gap-5 rounded-2xl overflow-hidden group cursor-default"
       style={{

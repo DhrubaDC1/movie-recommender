@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import HeroBackground from "@/components/HeroBackground";
 import MovieSearchInput from "@/components/MovieSearchInput";
 import PreferenceTag from "@/components/PreferenceTag";
+import { logger } from "@/lib/logger";
 
 const MAX_LIKED = 5;
 const MAX_DISLIKED = 3;
@@ -17,11 +18,17 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    logger.init();
+    logger.track("page_view", { page: "home" });
+  }, []);
+
   const addLiked = useCallback(
     (title: string) => {
       if (liked.length >= MAX_LIKED) return;
       if (!liked.includes(title) && !disliked.includes(title)) {
         setLiked((prev) => [...prev, title]);
+        logger.track("movie_add_liked", { title, total_liked: liked.length + 1 });
       }
     },
     [liked, disliked]
@@ -32,6 +39,7 @@ export default function HomePage() {
       if (disliked.length >= MAX_DISLIKED) return;
       if (!liked.includes(title) && !disliked.includes(title)) {
         setDisliked((prev) => [...prev, title]);
+        logger.track("movie_add_disliked", { title, total_disliked: disliked.length + 1 });
       }
     },
     [liked, disliked]
@@ -44,9 +52,12 @@ export default function HomePage() {
     }
     setError(null);
     setLoading(true);
+    logger.track("discover_click", { liked, disliked });
+    await logger.flush();  // flush before navigating away
     const params = new URLSearchParams();
     liked.forEach((m) => params.append("liked", m));
     disliked.forEach((m) => params.append("disliked", m));
+    params.append("session_id", logger.getSessionId());
     router.push(`/results?${params.toString()}`);
   };
 
@@ -127,7 +138,10 @@ export default function HomePage() {
                         key={title}
                         title={title}
                         type="liked"
-                        onRemove={() => setLiked((prev) => prev.filter((t) => t !== title))}
+                        onRemove={() => {
+                          setLiked((prev) => prev.filter((t) => t !== title));
+                          logger.track("movie_remove_liked", { title });
+                        }}
                       />
                     ))}
                   </AnimatePresence>
@@ -161,7 +175,10 @@ export default function HomePage() {
                         key={title}
                         title={title}
                         type="disliked"
-                        onRemove={() => setDisliked((prev) => prev.filter((t) => t !== title))}
+                        onRemove={() => {
+                          setDisliked((prev) => prev.filter((t) => t !== title));
+                          logger.track("movie_remove_disliked", { title });
+                        }}
                       />
                     ))}
                   </AnimatePresence>

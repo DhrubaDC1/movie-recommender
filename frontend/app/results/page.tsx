@@ -7,6 +7,7 @@ import { getRecommendations } from "@/lib/api";
 import type { Recommendation } from "@/lib/types";
 import HeroBackground from "@/components/HeroBackground";
 import RecommendationCard from "@/components/RecommendationCard";
+import { logger } from "@/lib/logger";
 
 type State = "loading" | "success" | "error";
 
@@ -19,6 +20,13 @@ function ResultsContent() {
 
   const liked = searchParams.getAll("liked");
   const disliked = searchParams.getAll("disliked");
+  const sessionId = searchParams.get("session_id") ?? undefined;
+
+  useEffect(() => {
+    logger.init();
+    logger.track("page_view", { page: "results", liked, disliked });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchRecs = useCallback(async () => {
     if (liked.length === 0) {
@@ -26,20 +34,36 @@ function ResultsContent() {
       return;
     }
     setState("loading");
+    const t0 = performance.now();
     try {
-      const data = await getRecommendations(liked, disliked);
+      const data = await getRecommendations(liked, disliked, 5, sessionId);
+      const latencyMs = Math.round(performance.now() - t0);
       setRecommendations(data.recommendations);
       setState("success");
+      logger.track("recommendations_received", {
+        liked,
+        disliked,
+        latency_ms: latencyMs,
+        results: data.recommendations.map((r) => ({ title: r.title, rank: r.rank })),
+      });
     } catch (e: unknown) {
-      setErrorMsg(e instanceof Error ? e.message : "Something went wrong");
+      const msg = e instanceof Error ? e.message : "Something went wrong";
+      setErrorMsg(msg);
       setState("error");
+      logger.track("recommendations_error", { liked, disliked, error: msg });
     }
-  }, [liked, disliked, router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     fetchRecs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchRecs]);
+
+  const handleRefine = async () => {
+    logger.track("refine_click", { liked, disliked });
+    await logger.flush();
+    router.push("/");
+  };
 
   const topBackdrop = recommendations[0]?.backdrop_url ?? null;
 
@@ -49,10 +73,7 @@ function ResultsContent() {
 
       {/* Nav */}
       <nav className="relative z-10 flex items-center justify-between px-8 py-6">
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-2 group"
-        >
+        <button onClick={handleRefine} className="flex items-center gap-2 group">
           <span className="text-white/40 group-hover:text-white/80 transition-colors text-sm">←</span>
           <span className="text-xl font-bold tracking-wide text-white">Cine</span>
           <span className="text-xl font-bold tracking-wide" style={{ color: "#e50914" }}>Match</span>
@@ -97,7 +118,7 @@ function ResultsContent() {
               Try Again
             </button>
             <button
-              onClick={() => router.push("/")}
+              onClick={handleRefine}
               className="text-sm text-white/30 hover:text-white/60 transition-colors"
             >
               ← Start Over
@@ -130,7 +151,14 @@ function ResultsContent() {
 
               <div className="space-y-4">
                 {recommendations.map((rec, i) => (
-                  <RecommendationCard key={rec.title} rec={rec} index={i} />
+                  <RecommendationCard
+                    key={rec.title}
+                    rec={rec}
+                    index={i}
+                    onView={() =>
+                      logger.track("card_view", { title: rec.title, rank: rec.rank })
+                    }
+                  />
                 ))}
               </div>
 
@@ -141,7 +169,7 @@ function ResultsContent() {
                 className="mt-12 flex justify-center"
               >
                 <button
-                  onClick={() => router.push("/")}
+                  onClick={handleRefine}
                   className="px-8 py-3 rounded-full text-sm font-semibold text-white/60 hover:text-white transition-colors"
                   style={{ border: "1px solid rgba(255,255,255,0.12)" }}
                 >

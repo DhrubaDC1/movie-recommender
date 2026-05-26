@@ -108,6 +108,62 @@ Day 1 complete. Ship it. 🎬
 
 ---
 
+## 2026-05-26 — Day 1 (continued)
+
+### 14:00 — Feature 4: Interaction & Behaviour Logging
+
+New requirement: log everything users do and what the system does internally, flush to DB every 30 seconds, so we can use the data later to improve recommendations.
+
+**What was built:**
+
+**Backend — `db.py` (new)**
+- Async SQLite via `aiosqlite`
+- Two tables: `user_events` (frontend interactions) and `pipeline_events` (backend RAG timings)
+- `user_events`: session_id, event_type, page, event_data (JSON), client/server timestamp
+- `pipeline_events`: session_id, event_type, event_data (JSON), duration_ms, error, timestamp
+- Indexed on session_id, event_type, timestamp for future querying
+
+**Backend — `main.py` (updated)**
+- `await init_db()` on startup before loading ML services
+- New `POST /log-events` endpoint — accepts batch of frontend events, writes to DB via `BackgroundTasks` (non-blocking, doesn't slow the response)
+- `/recommend` now fully instrumented with `time.monotonic()` at each RAG stage:
+  - embed_ms, vector_search_ms, rerank_ms, tmdb_enrich_ms, llm_ms, total_ms
+  - Pipeline event written to DB as background task after every recommendation
+- `session_id` threaded through from frontend → recommend request → pipeline log
+
+**Frontend — `lib/logger.ts` (new)**
+- Singleton `EventLogger` class
+- 30-second `setInterval` flush via `fetch` with `keepalive: true` (survives page navigation)
+- `beforeunload` handler for immediate flush on tab close
+- On flush failure: events put back at front of buffer so nothing is lost
+- Session ID stored in `sessionStorage` so it persists within a tab but not across sessions
+
+**Frontend — events tracked:**
+- `page_view` — on both landing and results pages
+- `movie_add_liked` / `movie_add_disliked` — when user selects from autocomplete
+- `movie_remove_liked` / `movie_remove_disliked` — when they remove a tag
+- `discover_click` — with full liked/disliked list at click time; triggers immediate flush before navigation
+- `recommendations_received` — titles, ranks, and client-perceived latency
+- `recommendations_error` — error message
+- `card_view` — via `IntersectionObserver` when a card becomes ≥50% visible (fires once per card)
+- `refine_click` — when navigating back, triggers flush
+
+**Challenges:**
+- `RecommendationCard` didn't accept `onView` prop originally. Added `IntersectionObserver` pattern with a `viewFired` ref to fire exactly once per card.
+- `motion.article` + `ref` required casting `cardRef as React.Ref<HTMLDivElement>` since Framer Motion's `motion.article` generic doesn't infer the element type from the HTML tag automatically.
+- `keepalive: true` on the flush fetch is critical — without it, the browser cancels in-flight requests when the page unloads.
+
+**What this data enables later:**
+- Most-searched movies (hot autocomplete terms)
+- Liked/disliked pair patterns → train better retrieval
+- Card view-through rate per rank position (are rank 4/5 ever seen?)
+- End-to-end latency tracking per RAG stage
+- Error rate monitoring
+
+Build: TypeScript clean. Next.js static build passes.
+
+---
+
 ### 17:30 — Hotfix: env file not loaded on startup
 
 First real run hit a `KeyError: 'TMDB_API_KEY'` immediately. Root cause: `load_dotenv()` with no arguments only looks for `.env`, but the project uses `.env.local`. One-line fix — `load_dotenv(".env.local")` — and the server came up clean: embedding model loaded, ChromaDB collection at 1000 docs, all services ready.
