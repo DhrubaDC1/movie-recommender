@@ -35,10 +35,12 @@ Task:
 3. Rank ALL candidates from best to worst fit, applying both taste AND language rules.
 4. For each, write a 2-sentence personalized explanation that explicitly references their liked or disliked films.
 
-Output ONLY a JSON array (no markdown, no extra text):
+Output ONLY a JSON array (no markdown, no extra text).
+The "candidate_index" field MUST be the number shown before the film in the list above (1, 2, 3 …).
 [
   {{
     "rank": 1,
+    "candidate_index": 3,
     "title": "Film Title",
     "explanation": "Two sentence personalized explanation."
   }},

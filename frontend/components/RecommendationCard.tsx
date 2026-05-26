@@ -51,6 +51,7 @@ export default function RecommendationCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const viewFired = useRef(false);
   const [imgError, setImgError] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
 
   useEffect(() => {
     if (!onView || !cardRef.current) return;
@@ -106,16 +107,27 @@ export default function RecommendationCard({
       </div>
 
       {/* Poster */}
-      <div className="flex-shrink-0 w-[130px] md:w-[175px] self-stretch overflow-hidden">
+      <div className="flex-shrink-0 w-[130px] md:w-[175px] self-stretch overflow-hidden relative">
         {rec.poster_url && !imgError ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={rec.poster_url}
-            alt={rec.title}
-            className="w-full h-full object-cover"
-            style={{ minHeight: "240px" }}
-            onError={() => setImgError(true)}
-          />
+          <>
+            {/* Shimmer shown until image finishes loading */}
+            {!imgLoaded && (
+              <div
+                className="absolute inset-0 animate-pulse"
+                style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%)", minHeight: "240px" }}
+              />
+            )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={rec.poster_url}
+              alt={rec.title}
+              className="w-full h-full object-cover"
+              style={{ minHeight: "240px", opacity: imgLoaded ? 1 : 0, transition: "opacity 0.3s" }}
+              loading="lazy"
+              onLoad={() => setImgLoaded(true)}
+              onError={() => setImgError(true)}
+            />
+          </>
         ) : (
           <PosterFallback title={rec.title} />
         )}

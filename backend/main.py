@@ -2,6 +2,7 @@ import asyncio
 import time
 from collections import Counter
 from contextlib import asynccontextmanager
+from difflib import get_close_matches
 from typing import Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
@@ -283,11 +284,32 @@ async def recommend(
     )
     llm_ms = int((time.monotonic() - t0) * 1000)
 
-    # Attach full TMDB metadata to each ranked result
+    # Attach full TMDB metadata to each ranked result.
+    # LLM sometimes rephrases titles ("Se7en" → "Seven"), so we look up by
+    # candidate_index first (exact array position), then fall back to fuzzy
+    # title matching so the poster is always found if the movie is in our list.
+    candidate_titles = [c["title"] for c in top_candidates]
     for rec in ranked:
-        match = next(
-            (c for c in top_candidates if c["title"].lower() == rec["title"].lower()), {}
-        )
+        match: dict = {}
+
+        # 1. Index-based lookup (LLM returns the number shown in the prompt)
+        idx = rec.get("candidate_index")
+        if isinstance(idx, int) and 1 <= idx <= len(top_candidates):
+            match = top_candidates[idx - 1]
+
+        # 2. Exact title match
+        if not match:
+            match = next(
+                (c for c in top_candidates if c["title"].lower() == rec["title"].lower()),
+                {},
+            )
+
+        # 3. Fuzzy title match (cutoff 0.6 avoids false positives)
+        if not match:
+            close = get_close_matches(rec["title"], candidate_titles, n=1, cutoff=0.6)
+            if close:
+                match = next(c for c in top_candidates if c["title"] == close[0])
+
         rec["poster_url"] = match.get("poster_url")
         rec["backdrop_url"] = match.get("backdrop_url")
         rec["streaming"] = match.get("streaming", [])
