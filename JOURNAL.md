@@ -108,3 +108,11 @@ Day 1 complete. Ship it. 🎬
 
 ---
 
+### 17:30 — Hotfix: env file not loaded on startup
+
+First real run hit a `KeyError: 'TMDB_API_KEY'` immediately. Root cause: `load_dotenv()` with no arguments only looks for `.env`, but the project uses `.env.local`. One-line fix — `load_dotenv(".env.local")` — and the server came up clean: embedding model loaded, ChromaDB collection at 1000 docs, all services ready.
+
+Lesson: name your env file exactly `.env` if you want python-dotenv to find it automatically, or always pass the filename explicitly.
+
+---
+
