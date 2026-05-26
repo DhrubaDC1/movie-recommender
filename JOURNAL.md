@@ -384,3 +384,29 @@ Build: TypeScript clean. All changes on `main`.
 
 ---
 
+### 20:15 — Hotfix: Language filter not reflected in results
+
+User reported language selection had no visible effect. Traced the pipeline and found three separate issues:
+
+**Root cause 1 — Candidate pool too small**
+
+`n_candidates = req.num_results * 2 = 10`. The IMDB Top 1000 dataset has a small number of Hindi films (Dangal, 3 Idiots, Lagaan, etc.) and essentially zero Bangla films. If the semantic search returns 10 candidates and the soft-sort only finds 1–2 Hindi matches in that pool, the LLM still gets 8 English films and will rank them higher by default.
+
+Fix: `n_candidates = req.num_results * (4 if req.languages else 2)` — double the pool when a language filter is active to give the soft-sort more material.
+
+**Root cause 2 — Vector query had no language signal**
+
+The embedding query was `"Movies similar to: Inception."` — no mention of language anywhere. ChromaDB finds thematically similar movies, which are overwhelmingly English.
+
+Fix: Prepend the language to the query: `"Hindi/Bangla movies similar to: Inception."` — the multilingual E5 embedding encodes this, biasing retrieval toward Indian cinema.
+
+**Root cause 3 — LLM couldn't see the language of each candidate**
+
+The candidates block showed title/genre/rating/director but NOT language. The LLM had to guess which films were Hindi from its own training knowledge — for lesser-known films it would have no idea. And the instruction was "prioritise when quality is otherwise equal" — a soft hint the LLM could silently ignore.
+
+Fix: Added `Language: Hindi` to every candidate line (ISO code → full name via `_ISO_TO_NAME` dict). Hardened the LANGUAGE RULE in the prompt: "you MUST rank films whose Language field matches a preferred language above films that do not match, as long as any language-matching candidate exists."
+
+Lesson: A language filter only works if all three of (retrieval, sorting, LLM visibility) respect it. Fixing just one layer is insufficient.
+
+---
+
