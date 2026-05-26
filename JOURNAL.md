@@ -553,3 +553,66 @@ Post-hoc filtering would mean: retrieve N candidates → throw some away → may
 Build: TypeScript clean. Committed to `feat/time-period-filter`, merged to `main`.
 
 ---
+
+## 2026-05-26 — Day 1 (late night)
+
+### 23:30 — Feature 10: CineSwipe — Tinder-style movie rating game
+
+New feature: a swipe-to-rate game that keeps users engaged while also collecting rich taste-profile data.
+
+**Flow:**
+1. Language selection screen (English / Hindi / Bangla / Others — multi-select, same options as the main filter)
+2. Swipe game — top-rated movies shown as a stack of cards, one at a time
+3. Three actions per card: ♥ Liked | ✕ Disliked | ? Haven't Watched
+4. Done screen showing stats, with a "Get Recommendations →" shortcut
+
+**The data flywheel:**
+- `Liked` / `Disliked` → persisted to `movie_feedback` with `source: "swipe_game"`
+- These feed directly into the existing `/recommend` pipeline's user-history merge (already implemented in Feature 5) — no code changes needed there
+- `Haven't Watched` → skipped this round (can return once more per session), never stored
+- Once a movie is liked or disliked, it's excluded from future game rounds (`get_all_rated_titles` query)
+
+**Backend — `GET /game/movies`:**
+
+```python
+@app.get("/game/movies")
+async def game_movies(language: list[str] = Query(default=[]), page: int = Query(default=1, ge=1), ...):
+```
+
+- Calls `tmdb.get_top_rated(language_code, page)` — a new method using `sort_by=vote_average.desc&vote_count.gte=300`
+- Fetches 2 TMDB pages per selected language in parallel (via `asyncio.gather`)
+- Deduplicates by `tmdb_id`, sorts by `(vote_average, vote_count)` DESC
+- For authenticated users: fetches all rated titles via `get_all_rated_titles(user_id)` and filters them out before returning
+- Returns up to 20 movies per call
+
+**`db.py` — `get_all_rated_titles(user_id)`:**
+- New function that returns ALL movie titles the user has ever rated (no limit) as a lowercase set
+- Used exclusively by the game endpoint — recommendations still use `get_user_feedback_history` with a recency limit
+
+**Frontend — `GameCard` component:**
+
+The card handles its own animation lifecycle via an `exitDir` state:
+- `useMotionValue` + `useTransform` for smooth drag tracking
+- LIKE/NOPE stamps fade in as the user drags (green right, red left) using `useTransform` on opacity
+- On drag release > 110px threshold → `setExitDir` → Framer Motion `animate` prop drives the fly-off
+- On button press → `useImperativeHandle` exposes `triggerAction()` so parent can drive the same exit animation
+- `onAnimationComplete` callback fires AFTER the exit animation, then calls `onAction` to notify the parent
+- This design ensures the card always flies off before the deck updates — no jarring jump cuts
+
+**Frontend — `GamePage` (three-phase state machine):**
+- `"language-select"` → `"playing"` → `"done"`, managed with `AnimatePresence mode="wait"` for smooth phase transitions
+- Card stack: top card (`deck[0]`) is the interactive `GameCard`, next two (`deck[1]`, `deck[2]`) are read-only `GhostCard` components rendered at `scale(0.94, 0.88)` and translated down, giving depth without interaction complexity
+- Auto-fetch: `useEffect` watches `deck.length` — when it drops below 5, fetches the next page in the background. User never sees an empty deck in practice.
+- `skippedOnce` flag on each deck card: Haven't Watched sends the card to the end of the queue; if it comes up again and the user skips again, it's removed (prevents infinite loops on short decks)
+- Guest users see the full game UI; their actions update local state but don't call `submitFeedback`
+
+**Discovery in the UI:**
+- NavBar: cinema-red "🎬 CineSwipe" pill link (hidden on the game page itself to avoid redundancy)
+- Home page: a CTA banner below the main form explaining the game and linking to it
+
+**Why the `useImperativeHandle` pattern:**
+The action buttons are inside the card (bottom section) so they're part of the draggable element's UI. Clicking them needs to start the card's internal exit animation, then notify the parent. `forwardRef` + `useImperativeHandle` exposes a `triggerAction(action)` method on the card, which the parent calls when it wants to programmatically trigger an action (e.g., from external keyboard shortcuts or accessibility controls). The card remains the single source of truth for its animation state.
+
+Build: TypeScript 0 errors. Next.js static build: `/game` prerendered. Merged to `main`.
+
+---
