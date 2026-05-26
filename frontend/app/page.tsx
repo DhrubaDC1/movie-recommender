@@ -6,22 +6,49 @@ import { AnimatePresence, motion } from "framer-motion";
 import HeroBackground from "@/components/HeroBackground";
 import MovieSearchInput from "@/components/MovieSearchInput";
 import PreferenceTag from "@/components/PreferenceTag";
+import NavBar from "@/components/NavBar";
 import { logger } from "@/lib/logger";
+import { useAuth } from "@/contexts/AuthContext";
+import { fetchUserHistory } from "@/lib/auth";
 
 const MAX_LIKED = 5;
 const MAX_DISLIKED = 3;
 
 export default function HomePage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [liked, setLiked] = useState<string[]>([]);
   const [disliked, setDisliked] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   useEffect(() => {
     logger.init();
     logger.track("page_view", { page: "home" });
   }, []);
+
+  // Pre-populate preferences from history when user logs in
+  useEffect(() => {
+    if (!user || historyLoaded) return;
+    setHistoryLoaded(true);
+    fetchUserHistory().then(({ liked: hl, disliked: hd }) => {
+      if (hl.length === 0 && hd.length === 0) return;
+      setLiked((prev) => {
+        const merged = [...new Set([...prev, ...hl])].slice(0, MAX_LIKED);
+        return merged;
+      });
+      setDisliked((prev) => {
+        const merged = [...new Set([...prev, ...hd])].slice(0, MAX_DISLIKED);
+        return merged;
+      });
+    });
+  }, [user, historyLoaded]);
+
+  // Reset history flag so re-login re-populates
+  useEffect(() => {
+    if (!user) setHistoryLoaded(false);
+  }, [user]);
 
   const addLiked = useCallback(
     (title: string) => {
@@ -53,7 +80,7 @@ export default function HomePage() {
     setError(null);
     setLoading(true);
     logger.track("discover_click", { liked, disliked });
-    await logger.flush();  // flush before navigating away
+    await logger.flush();
     const params = new URLSearchParams();
     liked.forEach((m) => params.append("liked", m));
     disliked.forEach((m) => params.append("disliked", m));
@@ -66,27 +93,14 @@ export default function HomePage() {
   return (
     <main className="min-h-screen flex flex-col">
       <HeroBackground />
+      <NavBar />
 
-      {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-8 py-6">
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-bold tracking-wide text-white">Cine</span>
-          <span className="text-xl font-bold tracking-wide" style={{ color: "#e50914" }}>
-            Match
-          </span>
-        </div>
-        <div className="text-xs text-white/30 tracking-widest uppercase">
-          AI · RAG · LLM
-        </div>
-      </nav>
-
-      {/* Hero content */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pb-16 pt-8">
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pb-16 pt-4">
         <motion.div
           initial={{ opacity: 0, y: 32 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
-          className="text-center mb-12 max-w-2xl"
+          className="text-center mb-10 max-w-2xl"
         >
           <p className="text-xs tracking-[0.3em] uppercase mb-4" style={{ color: "#e50914" }}>
             Powered by LLM · RAG · ChromaDB
@@ -95,12 +109,12 @@ export default function HomePage() {
             Your Perfect Film,<br />Algorithmically Discovered
           </h1>
           <p className="text-base text-white/50 leading-relaxed max-w-lg mx-auto">
-            Tell us what you&apos;ve loved and what missed the mark.
-            Our AI finds your next obsession.
+            {user
+              ? `Welcome back, ${user.username}. Your taste history is already loaded.`
+              : "Tell us what you've loved and what missed the mark. Our AI finds your next obsession."}
           </p>
         </motion.div>
 
-        {/* Preference inputs */}
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -115,6 +129,16 @@ export default function HomePage() {
               border: "1px solid rgba(255,255,255,0.08)",
             }}
           >
+            {user && liked.length > 0 && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-xs text-white/30 mb-4 text-center"
+              >
+                Pre-filled from your watch history — edit freely
+              </motion.p>
+            )}
+
             <div className="grid md:grid-cols-2 gap-6 md:gap-8">
               {/* Liked */}
               <div className="space-y-3">
@@ -122,9 +146,7 @@ export default function HomePage() {
                   <h2 className="text-sm font-semibold tracking-wide text-white/80 uppercase">
                     Movies I Love
                   </h2>
-                  <span className="text-xs text-white/30">
-                    {liked.length}/{MAX_LIKED}
-                  </span>
+                  <span className="text-xs text-white/30">{liked.length}/{MAX_LIKED}</span>
                 </div>
                 <MovieSearchInput
                   placeholder="Search a film…"
@@ -159,9 +181,7 @@ export default function HomePage() {
                   <h2 className="text-sm font-semibold tracking-wide text-white/80 uppercase">
                     Didn&apos;t Click With
                   </h2>
-                  <span className="text-xs text-white/30">
-                    {disliked.length}/{MAX_DISLIKED}
-                  </span>
+                  <span className="text-xs text-white/30">{disliked.length}/{MAX_DISLIKED}</span>
                 </div>
                 <MovieSearchInput
                   placeholder="Search a film…"
@@ -191,7 +211,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Error */}
             <AnimatePresence>
               {error && (
                 <motion.p
@@ -206,7 +225,6 @@ export default function HomePage() {
               )}
             </AnimatePresence>
 
-            {/* CTA */}
             <div className="mt-6 flex justify-center">
               <motion.button
                 onClick={handleDiscover}
@@ -233,7 +251,6 @@ export default function HomePage() {
           </div>
         </motion.div>
 
-        {/* Footer note */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
