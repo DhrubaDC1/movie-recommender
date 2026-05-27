@@ -80,8 +80,9 @@ class RecommendRequest(BaseModel):
     disliked: list[str] = []
     num_results: int = 5
     session_id: Optional[str] = None
-    languages: list[str] = []   # e.g. ["English", "Hindi"]
-    era: str = ""               # "Latest" | "2010s" | "2000s" | "Classics" | "" = any
+    languages: list[str] = []         # e.g. ["English", "Hindi"]
+    era: str = ""                     # "Latest" | "2010s" | "2000s" | "Classics" | "" = any
+    adult_certs: list[str] = []       # ["R"], ["NC-17"], or ["R", "NC-17"] — empty = adult mode off
 
 
 class LogEventsRequest(BaseModel):
@@ -103,10 +104,13 @@ async def health():
 
 
 @app.get("/search-movies")
-async def search_movies(q: str = Query(..., min_length=2)):
+async def search_movies(
+    q: str = Query(..., min_length=2),
+    adult: bool = Query(default=False),
+):
     if not q.strip():
         return []
-    return await tmdb.search_movie(q)
+    return await tmdb.search_movie(q, include_adult=adult)
 
 
 @app.post("/log-events", status_code=204)
@@ -139,24 +143,29 @@ async def user_history(user: dict = Depends(get_current_user)):
 async def game_movies(
     language: list[str] = Query(default=[]),
     page: int = Query(default=1, ge=1),
+    adult_cert: list[str] = Query(default=[]),
     user: Optional[dict] = Depends(get_optional_user),
 ):
     """Return top-rated movies for the swipe game, excluding already-rated ones."""
     lang_codes = [_LANG_ISO[l] for l in language if l in _LANG_ISO]
     include_others = "Others" in language
+    cert_loop: list[Optional[str]] = list(adult_cert) if adult_cert else [None]
 
     tasks: list = []
     if lang_codes:
         for code in lang_codes:
-            for p in (page, page + 1):
-                tasks.append(tmdb.get_top_rated(language_code=code, page=p))
+            for cert in cert_loop:
+                for p in (page, page + 1):
+                    tasks.append(tmdb.get_top_rated(language_code=code, page=p, certification=cert))
     if include_others:
         known_langs = list(_LANG_ISO.values())
-        for p in (page, page + 1):
-            tasks.append(tmdb.get_top_rated(language_code=None, page=p, exclude_languages=known_langs))
+        for cert in cert_loop:
+            for p in (page, page + 1):
+                tasks.append(tmdb.get_top_rated(language_code=None, page=p, exclude_languages=known_langs, certification=cert))
     if not tasks:
-        for p in (page, page + 1):
-            tasks.append(tmdb.get_top_rated(language_code=None, page=p))
+        for cert in cert_loop:
+            for p in (page, page + 1):
+                tasks.append(tmdb.get_top_rated(language_code=None, page=p, certification=cert))
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -204,10 +213,15 @@ async def recommend(
     all_liked = req.liked + extra_liked
     all_disliked = req.disliked + extra_disliked
 
+    adult_mode = bool(req.adult_certs)
+    # When no cert is selected, fall back to a one-element "no-cert" placeholder so
+    # the discover loop still issues a request — adult mode off behaves exactly as before.
+    cert_loop: list[Optional[str]] = list(req.adult_certs) if adult_mode else [None]
+
     # ── Step 1: Extract genre + keyword signals from liked movies ───────────
     t0 = time.monotonic()
     metas = await asyncio.gather(
-        *[tmdb.get_movie_meta(title) for title in all_liked[:3]],
+        *[tmdb.get_movie_meta(title, include_adult=adult_mode) for title in all_liked[:3]],
         return_exceptions=True,
     )
     genre_counter: Counter = Counter()
@@ -243,11 +257,12 @@ async def recommend(
     candidates: list[dict] = []
 
     if lang_codes:
-        # One discover request per language (2 pages each) for balanced coverage
+        # One discover request per language × cert (2 pages each) for balanced coverage
         discover_tasks = [
             tmdb.discover_movies(top_genre_ids, keyword_ids, lang_code, page=p,
-                                 date_gte=date_gte, date_lte=date_lte)
+                                 date_gte=date_gte, date_lte=date_lte, certification=cert)
             for lang_code in lang_codes
+            for cert in cert_loop
             for p in (1, 2)
         ]
         results_list = await asyncio.gather(*discover_tasks, return_exceptions=True)
@@ -256,20 +271,26 @@ async def recommend(
                 candidates.extend(res)
 
         if include_others:
-            broad = await tmdb.discover_movies(top_genre_ids, keyword_ids, page=1,
-                                               date_gte=date_gte, date_lte=date_lte)
+            others_tasks = [
+                tmdb.discover_movies(top_genre_ids, keyword_ids, page=1,
+                                     date_gte=date_gte, date_lte=date_lte, certification=cert)
+                for cert in cert_loop
+            ]
+            others_results = await asyncio.gather(*others_tasks, return_exceptions=True)
             known_iso = set(_LANG_ISO.values())
-            candidates.extend(c for c in broad if c["original_language"] not in known_iso)
+            for res in others_results:
+                if isinstance(res, Exception):
+                    continue
+                candidates.extend(c for c in res if c["original_language"] not in known_iso)
     else:
-        # No language preference — broad discovery across 2 pages
-        pages = await asyncio.gather(
-            tmdb.discover_movies(top_genre_ids, keyword_ids, page=1,
-                                 date_gte=date_gte, date_lte=date_lte),
-            tmdb.discover_movies(top_genre_ids, keyword_ids, page=2,
-                                 date_gte=date_gte, date_lte=date_lte),
-            return_exceptions=True,
-        )
-        for page_res in pages:
+        # No language preference — broad discovery × cert across 2 pages
+        broad_tasks = [
+            tmdb.discover_movies(top_genre_ids, keyword_ids, page=p,
+                                 date_gte=date_gte, date_lte=date_lte, certification=cert)
+            for cert in cert_loop
+            for p in (1, 2)
+        ]
+        for page_res in await asyncio.gather(*broad_tasks, return_exceptions=True):
             if not isinstance(page_res, Exception):
                 candidates.extend(page_res)
 
@@ -277,8 +298,9 @@ async def recommend(
     if len(candidates) < req.num_results:
         fallback_tasks = [
             tmdb.discover_movies(top_genre_ids, [], lc if lang_codes else None, page=1,
-                                 date_gte=date_gte, date_lte=date_lte)
+                                 date_gte=date_gte, date_lte=date_lte, certification=cert)
             for lc in (lang_codes or [None])
+            for cert in cert_loop
         ]
         for res in await asyncio.gather(*fallback_tasks, return_exceptions=True):
             if not isinstance(res, Exception):

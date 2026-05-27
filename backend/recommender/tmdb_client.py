@@ -36,10 +36,10 @@ class TMDBClient:
 
     # ── Autocomplete search (used by frontend /search-movies) ──────────────
 
-    async def search_movie(self, query: str) -> list[dict]:
+    async def search_movie(self, query: str, include_adult: bool = False) -> list[dict]:
         r = await self._client.get(
             f"{TMDB_BASE}/search/movie",
-            params=self._params(query=query, include_adult=False),
+            params=self._params(query=query, include_adult=include_adult),
         )
         r.raise_for_status()
         results = r.json().get("results", [])[:8]
@@ -55,11 +55,11 @@ class TMDBClient:
 
     # ── Metadata lookup for liked movies ───────────────────────────────────
 
-    async def get_movie_meta(self, title: str) -> dict:
+    async def get_movie_meta(self, title: str, include_adult: bool = False) -> dict:
         """Return genre_ids and keyword_ids for a movie title (for discover seeding)."""
         r = await self._client.get(
             f"{TMDB_BASE}/search/movie",
-            params=self._params(query=title, include_adult=False),
+            params=self._params(query=title, include_adult=include_adult),
         )
         r.raise_for_status()
         results = r.json().get("results", [])
@@ -93,12 +93,13 @@ class TMDBClient:
         min_votes: int = 50,
         date_gte: Optional[str] = None,   # "YYYY-MM-DD"
         date_lte: Optional[str] = None,   # "YYYY-MM-DD"
+        certification: Optional[str] = None,   # e.g. "R" | "NC-17" — restricts to that US cert
     ) -> list[dict]:
         """Discover movies via TMDB /discover/movie (always current data)."""
         params: dict = {
             "sort_by": "popularity.desc",
-            "vote_count.gte": min_votes,
-            "include_adult": False,
+            "vote_count.gte": min_votes if certification is None else 1,
+            "include_adult": certification is not None,
             "page": page,
         }
         if genre_ids:
@@ -112,6 +113,9 @@ class TMDBClient:
             params["primary_release_date.gte"] = date_gte
         if date_lte:
             params["primary_release_date.lte"] = date_lte
+        if certification:
+            params["certification_country"] = "US"
+            params["certification"] = certification
 
         r = await self._client.get(
             f"{TMDB_BASE}/discover/movie", params=self._params(**params)
@@ -151,16 +155,20 @@ class TMDBClient:
         page: int = 1,
         exclude_languages: Optional[list[str]] = None,
         min_votes: int = 300,
+        certification: Optional[str] = None,   # restricts to a US cert (e.g. "R", "NC-17")
     ) -> list[dict]:
         """Top-rated movies by vote_average for the swipe game (no genre/keyword filter)."""
         params: dict = {
             "sort_by": "vote_average.desc",
-            "vote_count.gte": min_votes,
-            "include_adult": False,
+            "vote_count.gte": min_votes if certification is None else 1,
+            "include_adult": certification is not None,
             "page": page,
         }
         if language_code:
             params["with_original_language"] = language_code
+        if certification:
+            params["certification_country"] = "US"
+            params["certification"] = certification
 
         r = await self._client.get(
             f"{TMDB_BASE}/discover/movie", params=self._params(**params)
