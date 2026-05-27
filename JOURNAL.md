@@ -785,3 +785,29 @@ The first instinct was to use TMDB's `include_adult=true` + filter results where
 
 ---
 
+
+## Feature 15 — Move 18+ toggle into settings panel (2026-05-27)
+
+**What changed**
+
+The 18+ adult mode toggle, certification picker (NC-17 / R / Both), and age confirmation modal were moved out of the home page config card and into the NavBar settings drawer (the cog icon ⚙).
+
+**Architecture change**
+
+Adult mode state was a local concern in `app/page.tsx`. Moving it to the settings panel (NavBar) required lifting it to a shared React context — `AdultModeContext` (`frontend/contexts/AdultModeContext.tsx`). The provider wraps the full app in `layout.tsx` alongside `ThemeProvider`.
+
+The context exposes: `adultMode`, `adultCertLabel`, `adultCerts` (derived), `setAdultCertLabel`, `requestEnableAdult`, `disableAdult`. The age confirmation modal is rendered directly inside the provider at `z-index: 100`, so it's always accessible regardless of which page is active.
+
+**NavBar settings drawer**
+
+A new "Adult Content" section was appended to the settings drawer, below the theme picker and a thin divider. It shows:
+- Label row ("Adult Content" / "R-rated & NC-17 titles") with the 18+ toggle on the right
+- Animated cert picker (NC-17 / R / Both) that slides in when the toggle is on
+
+**Home page cleanup**
+
+`app/page.tsx` dropped all adult local state, the three helpers (`requestEnableAdult`, `confirmAdult`, `disableAdult`), `ADULT_CERT_OPTIONS`, `ADULT_CONFIRM_KEY`, the inline toggle pill in the Era row, the animated cert sub-row, and the age-gate modal. It now consumes `{ adultMode, adultCerts }` from `useAdultMode()` — the URL params logic is unchanged.
+
+**PR**: #17
+
+---
