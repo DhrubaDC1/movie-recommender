@@ -10,6 +10,7 @@ interface Props {
   placeholder: string;
   onSelect: (title: string) => void;
   disabled?: boolean;
+  adult?: boolean;
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -21,7 +22,7 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
-export default function MovieSearchInput({ placeholder, onSelect, disabled }: Props) {
+export default function MovieSearchInput({ placeholder, onSelect, disabled, adult = false }: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TMDBSearchResult[]>([]);
   const [open, setOpen] = useState(false);
@@ -44,7 +45,7 @@ export default function MovieSearchInput({ placeholder, onSelect, disabled }: Pr
       return;
     }
     setLoading(true);
-    searchMovies(debouncedQuery).then((r) => {
+    searchMovies(debouncedQuery, adult).then((r) => {
       setResults(r);
       if (r.length > 0) {
         measurePos();
@@ -54,7 +55,7 @@ export default function MovieSearchInput({ placeholder, onSelect, disabled }: Pr
       }
       setLoading(false);
     });
-  }, [debouncedQuery, measurePos]);
+  }, [debouncedQuery, measurePos, adult]);
 
   // Keep position in sync while the dropdown is open
   useEffect(() => {

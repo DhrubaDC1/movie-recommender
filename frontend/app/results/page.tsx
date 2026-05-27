@@ -34,6 +34,7 @@ function ResultsContent() {
   const liked = useMemo(() => searchParams.getAll("liked"), [searchParams]);
   const disliked = useMemo(() => searchParams.getAll("disliked"), [searchParams]);
   const languages = useMemo(() => searchParams.getAll("language"), [searchParams]);
+  const adultCerts = useMemo(() => searchParams.getAll("adult_cert"), [searchParams]);
   const era = searchParams.get("era") ?? "";
   const sessionId = searchParams.get("session_id") ?? undefined;
 
@@ -58,7 +59,7 @@ function ResultsContent() {
       try {
         const allLiked = [...new Set([...liked, ...extraLiked])];
         const allDisliked = [...new Set([...disliked, ...extraDisliked])];
-        const data = await getRecommendations(allLiked, allDisliked, 5, sessionId, signal, languages, era);
+        const data = await getRecommendations(allLiked, allDisliked, 5, sessionId, signal, languages, era, adultCerts);
         const latencyMs = Math.round(performance.now() - t0);
         setRecommendations(data.recommendations);
         setFeedback({});
@@ -78,7 +79,7 @@ function ResultsContent() {
         logger.track("recommendations_error", { liked, disliked, error: msg });
       }
     },
-    [liked, disliked, languages, era, sessionId, router]
+    [liked, disliked, languages, era, adultCerts, sessionId, router]
   );
 
   useEffect(() => {
