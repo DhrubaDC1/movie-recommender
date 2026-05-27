@@ -4,20 +4,12 @@ python-dotenv==1.0.1
 httpx==0.28.1
 pydantic==2.10.4
 
-# Vector DB & Embeddings
-chromadb==0.6.3
-sentence-transformers==3.3.1
-
-# LLM
-groq==0.13.1
-
-# Data
-pandas==2.2.3
-numpy==2.2.1
-
-# Logging
-aiosqlite==0.20.0
-
 # Auth
 python-jose[cryptography]==3.3.0
 bcrypt==4.2.1
+
+# Logging / DB
+aiosqlite==0.20.0
+
+# LLM
+groq==0.13.1
