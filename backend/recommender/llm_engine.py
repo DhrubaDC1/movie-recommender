@@ -131,10 +131,15 @@ class LLMEngine:
 
     @staticmethod
     def _parse_json(text: str) -> list[dict]:
+        if not text:
+            print("[LLM] _parse_json: empty response from model")
+            return []
         match = re.search(r"\[.*\]", text, re.DOTALL)
         if match:
             try:
                 return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as e:
+                print(f"[LLM] _parse_json: JSON decode error — {e}\nRaw text:\n{text[:500]}")
+                return []
+        print(f"[LLM] _parse_json: no JSON array found in response:\n{text[:500]}")
         return []

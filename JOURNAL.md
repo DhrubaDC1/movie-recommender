@@ -705,3 +705,46 @@ Verified running on local machine: backend healthy, frontend serving full HTML, 
 
 ---
 
+### Feature 13: Search dropdown rendering + select bugs, LLM error visibility, HTTP UUID fallback
+
+A grab-bag of production-blockers spotted while smoke-testing the Docker build over plain HTTP on the LAN.
+
+**1. Search dropdown rendered nothing for valid results**
+
+Symptoms: typing into the "Loved Films" search box fired the network request, the backend returned matches, but no dropdown appeared. Suspected at first that a parent's `overflow-hidden` (the `glass-satin` card on `app/page.tsx`) was clipping the dropdown — moved it into a `createPortal(..., document.body)` with `position: fixed` and a measured `getBoundingClientRect()` offset. Portal still didn't render.
+
+Root cause turned out to be **`<AnimatePresence>` wrapping the Portal element directly**. Framer-motion 12 + React 19 iterate children via `React.Children.toArray` and don't recognise a Portal as a renderable child, so the entire tree was silently skipped. Fix: invert the nesting so the portal is the outer wrapper and `<AnimatePresence>` lives inside it, holding `<motion.div>` directly:
+
+```jsx
+{open && createPortal(
+  <AnimatePresence>
+    <motion.div key="movie-search-dropdown" ...>
+      {results.map(...)}
+    </motion.div>
+  </AnimatePresence>,
+  document.body
+)}
+```
+
+**2. Clicking a dropdown item didn't select**
+
+After the portal fix, the dropdown rendered correctly but clicking an item did nothing. The outside-click handler installed a `mousedown` listener on `document` and checked `containerRef.current?.contains(target)`. With the dropdown now portaled to `document.body`, the click target was *outside* the container — so `setOpen(false)` fired on mousedown, unmounting the button before its `onClick` could run.
+
+Fix: added a second ref on the portaled `<motion.div>` and exempted it in the handler, so clicks inside either the input *or* the dropdown count as "inside".
+
+**3. LLM returning empty/malformed JSON crashed the recommend pipeline silently**
+
+`LLMEngine._parse_json` returned `[]` on `JSONDecodeError` without logging, and `recommend()` happily proceeded with `ranked=[]` — the frontend then tried to render an empty results page with no explanation. Three small additions in `backend/recommender/llm_engine.py` and `backend/main.py`:
+
+- Log the raw model output (first 500 chars) on any JSON parse failure
+- Log when no JSON array is found at all
+- In `/recommend`, raise `HTTPException(500, ...)` with a friendly message if `ranked` comes back empty, instead of returning `{recommendations: []}`
+
+**4. `crypto.randomUUID()` undefined over plain HTTP**
+
+Logger session ID generation called `crypto.randomUUID()`, which is gated behind a Secure Context. Over `http://<lan-ip>:9090/`, the browser exposes `crypto.getRandomValues` but not `randomUUID`, so logger initialisation threw and silently broke all client-side event logging. Added a runtime check and a manual UUIDv4 fallback built from `crypto.getRandomValues(new Uint8Array(16))`.
+
+Verified end-to-end with headless Firefox via Playwright: search → dropdown → click → tag appears in Loved Films, counter increments to 1/5, dropdown closes, input clears.
+
+---
+
