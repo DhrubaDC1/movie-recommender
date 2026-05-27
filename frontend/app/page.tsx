@@ -13,8 +13,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useAdultMode } from "@/contexts/AdultModeContext";
 import { fetchUserHistory } from "@/lib/auth";
 
-const MAX_LIKED = 5;
-const MAX_DISLIKED = 3;
 const LANGUAGE_OPTIONS = ["English", "Hindi", "Bangla", "Others"] as const;
 const ERA_OPTIONS = [
   { label: "Latest", sub: "2022–now" },
@@ -46,14 +44,8 @@ export default function HomePage() {
     setHistoryLoaded(true);
     fetchUserHistory().then(({ liked: hl, disliked: hd }) => {
       if (hl.length === 0 && hd.length === 0) return;
-      setLiked((prev) => {
-        const merged = [...new Set([...prev, ...hl])].slice(0, MAX_LIKED);
-        return merged;
-      });
-      setDisliked((prev) => {
-        const merged = [...new Set([...prev, ...hd])].slice(0, MAX_DISLIKED);
-        return merged;
-      });
+      setLiked((prev) => [...new Set([...prev, ...hl])]);
+      setDisliked((prev) => [...new Set([...prev, ...hd])]);
     });
   }, [user, historyLoaded]);
 
@@ -64,7 +56,6 @@ export default function HomePage() {
 
   const addLiked = useCallback(
     (title: string) => {
-      if (liked.length >= MAX_LIKED) return;
       if (!liked.includes(title) && !disliked.includes(title)) {
         setLiked((prev) => [...prev, title]);
         logger.track("movie_add_liked", { title, total_liked: liked.length + 1 });
@@ -75,7 +66,6 @@ export default function HomePage() {
 
   const addDisliked = useCallback(
     (title: string) => {
-      if (disliked.length >= MAX_DISLIKED) return;
       if (!liked.includes(title) && !disliked.includes(title)) {
         setDisliked((prev) => [...prev, title]);
         logger.track("movie_add_disliked", { title, total_disliked: disliked.length + 1 });
@@ -246,14 +236,15 @@ export default function HomePage() {
                   <h2 className="text-[10px] font-bold tracking-[0.15em] text-white/50 uppercase">
                     Loved Films
                   </h2>
-                  <span className="text-[9px] font-bold text-white/35 bg-white/[0.02] px-1.5 py-0.25 rounded border border-white/[0.03]">
-                    {liked.length}/{MAX_LIKED}
-                  </span>
+                  {liked.length > 0 && (
+                    <span className="text-[9px] font-bold text-white/35 bg-white/[0.02] px-1.5 py-0.25 rounded border border-white/[0.03]">
+                      {liked.length}
+                    </span>
+                  )}
                 </div>
                 <MovieSearchInput
                   placeholder="Search a film…"
                   onSelect={addLiked}
-                  disabled={liked.length >= MAX_LIKED}
                   adult={adultMode}
                 />
                 <div className="flex flex-wrap gap-1.5 mt-2 overflow-y-auto max-h-[75px] pr-1.5">
@@ -284,14 +275,15 @@ export default function HomePage() {
                   <h2 className="text-[10px] font-bold tracking-[0.15em] text-white/50 uppercase">
                     Didn&apos;t Click With
                   </h2>
-                  <span className="text-[9px] font-bold text-white/35 bg-white/[0.02] px-1.5 py-0.25 rounded border border-white/[0.03]">
-                    {disliked.length}/{MAX_DISLIKED}
-                  </span>
+                  {disliked.length > 0 && (
+                    <span className="text-[9px] font-bold text-white/35 bg-white/[0.02] px-1.5 py-0.25 rounded border border-white/[0.03]">
+                      {disliked.length}
+                    </span>
+                  )}
                 </div>
                 <MovieSearchInput
                   placeholder="Search a film…"
                   onSelect={addDisliked}
-                  disabled={disliked.length >= MAX_DISLIKED}
                   adult={adultMode}
                 />
                 <div className="flex flex-wrap gap-1.5 mt-2 overflow-y-auto max-h-[75px] pr-1.5">
