@@ -652,3 +652,56 @@ All changes verified: Next.js compiled cleanly in `1360ms`, TypeScript check pas
 
 ---
 
+## 2026-05-27 — Day 2 (continued)
+
+### Feature 12: Production Docker Setup
+
+Containerised the entire stack for production deployment. The app is now accessible from any machine on the network with a single `docker compose up --build -d`.
+
+**Architecture:**
+
+```
+Browser → nginx:9090
+              ├── /api/* → backend:8000  (FastAPI — internal only)
+              └── /*     → frontend:3000 (Next.js  — internal only)
+```
+
+nginx is the single public-facing entry point. Backend and frontend are on the internal Docker network and are never directly reachable from outside. This gives a clean security boundary and means the frontend's `NEXT_PUBLIC_API_URL=/api` (a relative path) works correctly from any host IP — no hard-coded addresses.
+
+**What was built:**
+
+**`backend/Dockerfile`**
+- `python:3.11-slim` base; installs `curl` for the healthcheck
+- Copies app code, installs `requirements.txt`, starts `uvicorn` bound to `0.0.0.0:8000`
+
+**`frontend/Dockerfile` (multi-stage)**
+- Stage 1 (`deps`): `npm ci` — pure dependency install layer, cached separately
+- Stage 2 (`builder`): builds Next.js with `NEXT_PUBLIC_API_URL=/api` baked in as a build ARG; the relative URL means the browser always calls the same host it loaded the page from, routing through nginx regardless of the server's IP
+- Stage 3 (`runner`): copies only `.next/standalone` and `.next/static` — final image is ~300 MB vs ~1.5 GB for a naive copy
+- Required adding `output: "standalone"` to `next.config.ts`
+
+**`nginx/nginx.conf`**
+- `location /api/` proxies to `http://backend/` (trailing slash strips the prefix) with `proxy_read_timeout 120s` to handle slow LLM calls
+- `location /` proxies to `http://frontend` with WebSocket upgrade headers for Next.js HMR compatibility
+- Auth cookies work transparently — nginx forwards `Set-Cookie` headers through; browser associates the cookie with the nginx origin, which is the same origin all subsequent API calls go to
+
+**`docker-compose.yml`**
+- Three services: `backend`, `frontend`, `nginx`
+- Backend has a `healthcheck` (`curl /health`) so the frontend container only starts once the API is confirmed ready
+- `app_data` named volume mounted at `/data` in backend — SQLite (`logs.db` with users + ratings + pipeline events) survives container rebuilds and `docker compose down`; only `docker compose down -v` wipes it
+- Backend and frontend use `expose` (not `ports`) — only nginx binds a host port
+
+**Backend requirements trim**
+- Removed `chromadb`, `sentence-transformers`, `pandas`, and `numpy` from `requirements.txt` — these are only used by the one-time `setup_vectordb.py` legacy script, not by the live API. Slashed pip install from potential OOM during build down to ~10 seconds and a lean ~200 MB image layer.
+
+**Deploy on any machine:**
+```bash
+cp .env.example .env   # fill in GROQ_API_KEY, TMDB_API_KEY, JWT_SECRET
+docker compose up --build -d
+# → app at http://<server-ip>:9090 (or :80 on a clean server)
+```
+
+Verified running on local machine: backend healthy, frontend serving full HTML, nginx routing `/api/*` correctly.
+
+---
+
