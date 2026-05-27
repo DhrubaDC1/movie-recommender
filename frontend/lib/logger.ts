@@ -64,7 +64,15 @@ class EventLogger {
     const KEY = "cm_session_id";
     let id = sessionStorage.getItem(KEY);
     if (!id) {
-      id = crypto.randomUUID();
+      // crypto.randomUUID() requires HTTPS; this fallback works over plain HTTP too
+      id = typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : Array.from(crypto.getRandomValues(new Uint8Array(16)))
+            .map((b, i) => {
+              const hex = b.toString(16).padStart(2, "0");
+              return [4, 6, 8, 10].includes(i) ? `-${hex}` : hex;
+            })
+            .join("");
       sessionStorage.setItem(KEY, id);
     }
     return id;

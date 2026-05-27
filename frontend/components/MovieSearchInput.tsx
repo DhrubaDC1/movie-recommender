@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { searchMovies } from "@/lib/api";
 import type { TMDBSearchResult } from "@/lib/types";
@@ -25,8 +26,16 @@ export default function MovieSearchInput({ placeholder, onSelect, disabled }: Pr
   const [results, setResults] = useState<TMDBSearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const debouncedQuery = useDebounce(query, 300);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const measurePos = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    setDropdownPos({ top: rect.bottom + 8, left: rect.left, width: rect.width });
+  }, []);
 
   useEffect(() => {
     if (debouncedQuery.length < 2) {
@@ -37,14 +46,34 @@ export default function MovieSearchInput({ placeholder, onSelect, disabled }: Pr
     setLoading(true);
     searchMovies(debouncedQuery).then((r) => {
       setResults(r);
-      setOpen(r.length > 0);
+      if (r.length > 0) {
+        measurePos();
+        setOpen(true);
+      } else {
+        setOpen(false);
+      }
       setLoading(false);
     });
-  }, [debouncedQuery]);
+  }, [debouncedQuery, measurePos]);
 
+  // Keep position in sync while the dropdown is open
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("resize", measurePos);
+    window.addEventListener("scroll", measurePos, true);
+    return () => {
+      window.removeEventListener("resize", measurePos);
+      window.removeEventListener("scroll", measurePos, true);
+    };
+  }, [open, measurePos]);
+
+  // Close on outside click (dropdown is portaled to body, so check it explicitly)
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -79,7 +108,7 @@ export default function MovieSearchInput({ placeholder, onSelect, disabled }: Pr
             e.target.style.borderColor = "rgba(229, 9, 20, 0.6)";
             e.target.style.boxShadow = "0 0 15px rgba(229, 9, 20, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.2)";
             e.target.style.backgroundColor = "rgba(255, 255, 255, 0.05)";
-            if (results.length > 0) setOpen(true);
+            if (results.length > 0) { measurePos(); setOpen(true); }
           }}
           onBlur={(e) => {
             e.target.style.borderColor = "rgba(255, 255, 255, 0.06)";
@@ -99,22 +128,36 @@ export default function MovieSearchInput({ placeholder, onSelect, disabled }: Pr
         )}
       </div>
 
-      <AnimatePresence>
-        {open && (
+      {open && dropdownPos.width > 0 && typeof document !== "undefined" && createPortal(
+        <AnimatePresence>
           <motion.div
+            ref={dropdownRef}
+            key="movie-search-dropdown"
             initial={{ opacity: 0, y: 10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="absolute z-50 w-full mt-2.5 rounded-2xl overflow-hidden shadow-2xl glass-strong max-h-[320px] overflow-y-auto"
             style={{
-              borderColor: "rgba(255, 255, 255, 0.08)",
+              position: "fixed",
+              top: dropdownPos.top,
+              left: dropdownPos.left,
+              width: dropdownPos.width,
+              zIndex: 9999,
+              maxHeight: 320,
+              overflowY: "auto",
+              borderRadius: 16,
+              background: "rgba(14, 14, 26, 0.97)",
+              backdropFilter: "blur(32px)",
+              WebkitBackdropFilter: "blur(32px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.08)",
             }}
           >
             {results.map((r) => (
               <button
                 key={r.tmdb_id}
                 className="w-full flex items-center gap-3 px-4.5 py-3 hover:bg-white/[0.04] active:bg-white/[0.06] transition-colors text-left border-b border-white/[0.02] last:border-b-0 cursor-pointer"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleSelect(r.title)}
               >
                 {r.poster_url ? (
@@ -136,8 +179,9 @@ export default function MovieSearchInput({ placeholder, onSelect, disabled }: Pr
               </button>
             ))}
           </motion.div>
-        )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }

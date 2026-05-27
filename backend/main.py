@@ -348,6 +348,10 @@ async def recommend(
     )
     llm_ms = int((time.monotonic() - t0) * 1000)
 
+    if not ranked:
+        print(f"[recommend] LLM returned 0 results for liked={all_liked} candidates={len(top_candidates)}")
+        raise HTTPException(status_code=500, detail="The AI couldn't rank films right now — please try again.")
+
     # Attach full TMDB metadata to each ranked result.
     # LLM sometimes rephrases titles ("Se7en" → "Seven"), so we look up by
     # candidate_index first (exact array position), then fall back to fuzzy
