@@ -10,6 +10,7 @@ import PreferenceTag from "@/components/PreferenceTag";
 import NavBar from "@/components/NavBar";
 import { logger } from "@/lib/logger";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAdultMode } from "@/contexts/AdultModeContext";
 import { fetchUserHistory } from "@/lib/auth";
 
 const MAX_LIKED = 5;
@@ -22,51 +23,17 @@ const ERA_OPTIONS = [
   { label: "Classics", sub: "before 2000" },
 ] as const;
 
-const ADULT_CERT_OPTIONS = [
-  { label: "NC-17", sub: "Restricted only",  certs: ["NC-17"] as string[] },
-  { label: "R",     sub: "R-rated only",     certs: ["R"] as string[] },
-  { label: "Both",  sub: "R + NC-17",        certs: ["R", "NC-17"] as string[] },
-] as const;
-const ADULT_CONFIRM_KEY = "cm_adult_confirmed";
-
 export default function HomePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const { adultMode, adultCerts } = useAdultMode();
   const [liked, setLiked] = useState<string[]>([]);
   const [disliked, setDisliked] = useState<string[]>([]);
   const [selectedLangs, setSelectedLangs] = useState<string[]>([]);
   const [selectedEra, setSelectedEra] = useState<string>("");
-  const [adultMode, setAdultMode] = useState(false);
-  const [adultCertLabel, setAdultCertLabel] = useState<string>("Both");
-  const [adultConfirmOpen, setAdultConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-
-  const adultCerts = adultMode
-    ? (ADULT_CERT_OPTIONS.find((o) => o.label === adultCertLabel)?.certs ?? [])
-    : [];
-
-  const requestEnableAdult = () => {
-    if (typeof window !== "undefined" && localStorage.getItem(ADULT_CONFIRM_KEY) === "1") {
-      setAdultMode(true);
-      logger.track("adult_mode_toggle", { on: true, cert: adultCertLabel, source: "remembered" });
-      return;
-    }
-    setAdultConfirmOpen(true);
-  };
-
-  const confirmAdult = () => {
-    if (typeof window !== "undefined") localStorage.setItem(ADULT_CONFIRM_KEY, "1");
-    setAdultMode(true);
-    setAdultConfirmOpen(false);
-    logger.track("adult_mode_toggle", { on: true, cert: adultCertLabel, source: "confirmed" });
-  };
-
-  const disableAdult = () => {
-    setAdultMode(false);
-    logger.track("adult_mode_toggle", { on: false });
-  };
 
   useEffect(() => {
     logger.init();
@@ -229,43 +196,14 @@ export default function HomePage() {
                 <h2 className="text-[10px] font-bold tracking-[0.15em] text-white/50 uppercase">
                   Era
                 </h2>
-                <div className="flex items-center gap-3">
+                {selectedEra && (
                   <button
-                    type="button"
-                    onClick={() => (adultMode ? disableAdult() : requestEnableAdult())}
-                    className="flex items-center gap-1.5 cursor-pointer group"
-                    aria-pressed={adultMode}
+                    onClick={() => setSelectedEra("")}
+                    className="text-[10px] font-semibold text-[#e50914] hover:text-[#ff3b45] transition-colors cursor-pointer"
                   >
-                    <span
-                      className="text-[9px] font-extrabold tracking-[0.18em] uppercase transition-colors"
-                      style={{ color: adultMode ? "#e50914" : "rgba(255,255,255,0.35)" }}
-                    >
-                      18+
-                    </span>
-                    <span
-                      className="relative inline-block w-7 h-3.5 rounded-full transition-colors duration-300"
-                      style={{
-                        background: adultMode
-                          ? "linear-gradient(135deg, #e50914 0%, #b0060f 100%)"
-                          : "rgba(255,255,255,0.08)",
-                        boxShadow: adultMode ? "0 0 8px rgba(229,9,20,0.45)" : "inset 0 1px 2px rgba(0,0,0,0.4)",
-                      }}
-                    >
-                      <span
-                        className="absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-all duration-300"
-                        style={{ left: adultMode ? "14px" : "2px" }}
-                      />
-                    </span>
+                    Clear Filter
                   </button>
-                  {selectedEra && (
-                    <button
-                      onClick={() => setSelectedEra("")}
-                      className="text-[10px] font-semibold text-[#e50914] hover:text-[#ff3b45] transition-colors cursor-pointer"
-                    >
-                      Clear Filter
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
               <div className="flex flex-row overflow-x-auto no-scrollbar gap-2 max-w-full pb-0.5">
                 {ERA_OPTIONS.map(({ label, sub }) => {
@@ -294,53 +232,6 @@ export default function HomePage() {
                 })}
               </div>
             </div>
-
-            <AnimatePresence>
-              {adultMode && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.25 }}
-                  style={{ overflow: "hidden" }}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-[10px] font-bold tracking-[0.15em] uppercase" style={{ color: "#e50914" }}>
-                      Adult Cert
-                    </h2>
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/30">
-                      18+ only
-                    </span>
-                  </div>
-                  <div className="flex flex-row overflow-x-auto no-scrollbar gap-2 max-w-full pb-0.5">
-                    {ADULT_CERT_OPTIONS.map(({ label, sub }) => {
-                      const active = adultCertLabel === label;
-                      return (
-                        <motion.button
-                          key={label}
-                          onClick={() => setAdultCertLabel(label)}
-                          whileTap={{ scale: 0.94 }}
-                          className="px-4 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-300 flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
-                          style={{
-                            background: active
-                              ? "linear-gradient(135deg, #e50914 0%, #b0060f 100%)"
-                              : "rgba(255,255,255,0.02)",
-                            border: active
-                              ? "1px solid rgba(255,255,255,0.15)"
-                              : "1px solid rgba(255,255,255,0.04)",
-                            color: active ? "#fff" : "rgba(255,255,255,0.45)",
-                            boxShadow: active ? "0 4px 10px rgba(229,9,20,0.25)" : "none",
-                          }}
-                        >
-                          {label}
-                          <span className="text-[9px] font-medium opacity-50">{sub}</span>
-                        </motion.button>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
 
             <div
               className="hidden md:block"
@@ -523,64 +414,6 @@ export default function HomePage() {
         </motion.p>
       </div>
 
-      <AnimatePresence>
-        {adultConfirmOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center px-4"
-            style={{ background: "rgba(3, 3, 8, 0.85)", backdropFilter: "blur(8px)" }}
-            onClick={() => setAdultConfirmOpen(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.94, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm rounded-3xl p-7 glass-satin"
-              style={{
-                border: "1px solid rgba(229, 9, 20, 0.3)",
-                boxShadow: "0 30px 60px rgba(0,0,0,0.6), 0 0 25px rgba(229,9,20,0.15)",
-              }}
-            >
-              <div className="flex flex-col items-center gap-4 text-center">
-                <div
-                  className="w-12 h-12 rounded-full flex items-center justify-center"
-                  style={{ background: "linear-gradient(135deg, #e50914 0%, #8a0009 100%)", boxShadow: "0 6px 20px rgba(229,9,20,0.4)" }}
-                >
-                  <span className="text-white text-[11px] font-black tracking-[0.15em]">18+</span>
-                </div>
-                <h2 className="text-base font-extrabold text-white tracking-tight">
-                  Confirm you are 18 or older
-                </h2>
-                <p className="text-[11px] text-white/50 leading-relaxed font-medium">
-                  Adult mode shows R-rated and NC-17 restricted titles only. By continuing, you confirm you are of legal age to view this content in your region.
-                </p>
-                <div className="flex w-full gap-2 mt-2">
-                  <button
-                    onClick={() => setAdultConfirmOpen(false)}
-                    className="flex-1 px-4 py-2.5 rounded-xl text-[10px] font-bold tracking-widest uppercase text-white/60 hover:text-white hover:bg-white/[0.04] transition-all duration-300 border border-white/[0.06] cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmAdult}
-                    className="flex-1 px-4 py-2.5 rounded-xl text-[10px] font-extrabold tracking-widest uppercase text-white cursor-pointer transition-all duration-300 hover:scale-[1.02]"
-                    style={{
-                      background: "linear-gradient(135deg, #e50914 0%, #b0060f 100%)",
-                      boxShadow: "0 4px 15px rgba(229,9,20,0.35)",
-                    }}
-                  >
-                    I am 18+
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </main>
   );
 }

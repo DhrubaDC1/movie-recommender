@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme, type Theme } from "@/contexts/ThemeContext";
+import { useAdultMode, ADULT_CERT_OPTIONS } from "@/contexts/AdultModeContext";
 import AuthModal from "./AuthModal";
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
 export default function NavBar({ onBack, subtitle }: Props) {
   const { user, logout, loading } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { adultMode, adultCertLabel, setAdultCertLabel, requestEnableAdult, disableAdult } = useAdultMode();
   const [showModal, setShowModal] = useState(false);
   const [modalTab, setModalTab] = useState<"login" | "signup">("login");
   const [showSettings, setShowSettings] = useState(false);
@@ -274,6 +276,88 @@ export default function NavBar({ onBack, subtitle }: Props) {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Adult Content Section */}
+              <div className="space-y-3">
+                <div
+                  className="w-full"
+                  style={{ height: "1px", background: "rgba(255,255,255,0.05)" }}
+                />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-bold text-white/80">Adult Content</h2>
+                    <p className="text-xs text-white/35 mt-0.5 font-medium">R-rated &amp; NC-17 titles</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => (adultMode ? disableAdult() : requestEnableAdult())}
+                    className="flex items-center gap-2 cursor-pointer group"
+                    aria-pressed={adultMode}
+                  >
+                    <span
+                      className="text-[9px] font-extrabold tracking-[0.18em] uppercase transition-colors"
+                      style={{ color: adultMode ? "#e50914" : "rgba(255,255,255,0.35)" }}
+                    >
+                      18+
+                    </span>
+                    <span
+                      className="relative inline-block w-9 h-5 rounded-full transition-colors duration-300"
+                      style={{
+                        background: adultMode
+                          ? "linear-gradient(135deg, #e50914 0%, #b0060f 100%)"
+                          : "rgba(255,255,255,0.08)",
+                        boxShadow: adultMode ? "0 0 10px rgba(229,9,20,0.45)" : "inset 0 1px 2px rgba(0,0,0,0.4)",
+                      }}
+                    >
+                      <span
+                        className="absolute top-1 w-3 h-3 rounded-full bg-white shadow transition-all duration-300"
+                        style={{ left: adultMode ? "20px" : "4px" }}
+                      />
+                    </span>
+                  </button>
+                </div>
+
+                <AnimatePresence>
+                  {adultMode && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ overflow: "hidden" }}
+                    >
+                      <p className="text-[10px] font-bold tracking-[0.15em] uppercase mb-2" style={{ color: "#e50914" }}>
+                        Certification
+                      </p>
+                      <div className="flex gap-2">
+                        {ADULT_CERT_OPTIONS.map(({ label, sub }) => {
+                          const active = adultCertLabel === label;
+                          return (
+                            <button
+                              key={label}
+                              onClick={() => setAdultCertLabel(label)}
+                              className="flex-1 py-2 rounded-xl text-[11px] font-semibold transition-all duration-300 flex flex-col items-center gap-0.5 cursor-pointer"
+                              style={{
+                                background: active
+                                  ? "linear-gradient(135deg, #e50914 0%, #b0060f 100%)"
+                                  : "rgba(255,255,255,0.02)",
+                                border: active
+                                  ? "1px solid rgba(255,255,255,0.15)"
+                                  : "1px solid rgba(255,255,255,0.04)",
+                                color: active ? "#fff" : "rgba(255,255,255,0.45)",
+                                boxShadow: active ? "0 4px 10px rgba(229,9,20,0.25)" : "none",
+                              }}
+                            >
+                              {label}
+                              <span className="text-[9px] font-medium opacity-50">{sub}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               {/* Close / Confirm Footer */}
