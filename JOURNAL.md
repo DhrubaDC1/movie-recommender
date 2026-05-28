@@ -877,3 +877,65 @@ With Groq gone and ChromaDB back in the requirements, the `chroma_db/` directory
 **PR**: #18
 
 ---
+
+## 2026-05-28 — Day 3 (continued)
+
+### Feature 17 (Tier 1): SQLite persistent TMDB cache — movie meta + streaming providers
+
+**Why**
+
+After replacing the LLM, the pipeline's remaining latency is almost entirely TMDB network time. `get_movie_meta()` makes 2 TMDB calls per liked movie (search + keywords). `enrich_with_streaming()` makes 1 call per candidate, fired in parallel for `num_results × 2` candidates. On a warm user session — returning user with the same liked movies — every single one of these calls is a duplicate. Caching them in SQLite turns repeat requests from ~1.5s to ~200ms with zero new infrastructure.
+
+**Two new tables in `logs.db`:**
+
+```sql
+CREATE TABLE tmdb_meta_cache (
+    title_lower TEXT    PRIMARY KEY,
+    tmdb_id     INTEGER,
+    genre_ids   TEXT    NOT NULL,
+    keyword_ids TEXT    NOT NULL,
+    fetched_at  TEXT    NOT NULL
+)
+
+CREATE TABLE tmdb_streaming_cache (
+    tmdb_id    INTEGER PRIMARY KEY,
+    providers  TEXT    NOT NULL,
+    fetched_at TEXT    NOT NULL
+)
+```
+
+Both added to `init_db()` — created automatically on server start, no migration script needed. `genre_ids` and `keyword_ids` stored as JSON strings (SQLite has no native array type). `providers` stored as JSON.
+
+**TTL logic (`tmdb_client.py`):**
+
+```python
+def _cache_fresh(fetched_at: str, max_age_days: int) -> bool:
+    dt = datetime.fromisoformat(fetched_at)
+    return datetime.now(timezone.utc) - dt < timedelta(days=max_age_days)
+```
+
+- Movie meta TTL: **30 days** — genre/keyword assignments for a released film essentially never change.
+- Streaming TTL: **7 days** — provider rights can rotate, but not daily. A week is safe.
+
+**Cache-first pattern in both methods:**
+
+`get_movie_meta()`:
+1. Check `tmdb_meta_cache` by `title_lower`. If fresh → return immediately, zero TMDB calls.
+2. Miss → fetch search + keywords from TMDB → upsert into cache → return.
+3. Empty result (movie not found) → also cached with empty lists so we don't retry unknowns.
+
+`enrich_with_streaming()`:
+1. Check `tmdb_streaming_cache` by `tmdb_id`. If fresh → return immediately.
+2. Miss → fetch providers → upsert into cache → return.
+3. **Stale-on-error**: if the TMDB call throws (network error, timeout) but a stale entry exists, return the stale data rather than `[]`. Graceful degradation.
+
+**Upsert semantics**: both use `ON CONFLICT(...) DO UPDATE SET` so re-fetching a movie simply refreshes the cache. No duplicates, no DELETE needed.
+
+**Testing**: wrote an async integration test against a temp SQLite file — all 5 assertions passed (write, case-insensitive read, streaming read, upsert, TTL helper). Cleaned up after test.
+
+**Expected latency improvement:**
+- First request for a title: unchanged (still calls TMDB, writes cache).
+- Second request for same title (same session or different user): `meta_ms` → ~0ms, `streaming_ms` → ~0ms.
+- Total pipeline warm: ~1.5s → ~300–400ms (just discover + reranker).
+
+---

@@ -1,4 +1,5 @@
 import httpx
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 
@@ -23,6 +24,16 @@ STREAMING_LOGO = {
     "Max": "https://image.tmdb.org/t/p/original/nmU4bScM7OUGE7Lnx8WfDMOxmEg.jpg",
     "Paramount Plus": "https://image.tmdb.org/t/p/original/xbhHHa1YgtpwhC8lb1NQ3ACVcLd.jpg",
 }
+
+
+def _cache_fresh(fetched_at: str, max_age_days: int) -> bool:
+    try:
+        dt = datetime.fromisoformat(fetched_at)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - dt < timedelta(days=max_age_days)
+    except Exception:
+        return False
 
 
 class TMDBClient:
@@ -57,6 +68,12 @@ class TMDBClient:
 
     async def get_movie_meta(self, title: str, include_adult: bool = False) -> dict:
         """Return genre_ids and keyword_ids for a movie title (for discover seeding)."""
+        from db import get_cached_movie_meta, set_cached_movie_meta
+
+        cached = await get_cached_movie_meta(title)
+        if cached and _cache_fresh(cached["fetched_at"], max_age_days=30):
+            return {"tmdb_id": cached["tmdb_id"], "genre_ids": cached["genre_ids"], "keyword_ids": cached["keyword_ids"]}
+
         r = await self._client.get(
             f"{TMDB_BASE}/search/movie",
             params=self._params(query=title, include_adult=include_adult),
@@ -64,6 +81,7 @@ class TMDBClient:
         r.raise_for_status()
         results = r.json().get("results", [])
         if not results:
+            await set_cached_movie_meta(title, None, [], [])
             return {"tmdb_id": None, "genre_ids": [], "keyword_ids": []}
 
         movie = results[0]
@@ -80,6 +98,7 @@ class TMDBClient:
         except Exception:
             pass
 
+        await set_cached_movie_meta(title, tmdb_id, genre_ids, keyword_ids)
         return {"tmdb_id": tmdb_id, "genre_ids": genre_ids, "keyword_ids": keyword_ids}
 
     # ── Real-time movie discovery ──────────────────────────────────────────
@@ -189,21 +208,30 @@ class TMDBClient:
 
     async def enrich_with_streaming(self, tmdb_id: int) -> list[dict]:
         """Fetch streaming providers for a TMDB movie ID."""
+        from db import get_cached_streaming, set_cached_streaming
+
+        cached = await get_cached_streaming(tmdb_id)
+        if cached and _cache_fresh(cached["fetched_at"], max_age_days=7):
+            return cached["providers"]
+
         try:
             r = await self._client.get(
                 f"{TMDB_BASE}/movie/{tmdb_id}/watch/providers", params=self._params()
             )
             r.raise_for_status()
             region_data = r.json().get("results", {}).get(self.region, {})
-            return [
+            providers = [
                 {
                     "name": p["provider_name"],
                     "logo_url": f"{IMG_BASE}/w45{p['logo_path']}" if p.get("logo_path") else None,
                 }
                 for p in region_data.get("flatrate", [])[:4]
             ]
+            await set_cached_streaming(tmdb_id, providers)
+            return providers
         except Exception:
-            return []
+            # Stale cache beats empty on transient network error
+            return cached["providers"] if cached else []
 
     # ── Legacy: kept for get_movie_details_by_title callers ───────────────
 
