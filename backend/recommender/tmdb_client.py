@@ -1,6 +1,11 @@
+import asyncio
+import hashlib
+import json
+import time as _time
 import httpx
+from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 
 TMDB_BASE = "https://api.themoviedb.org/3"
@@ -26,6 +31,43 @@ STREAMING_LOGO = {
 }
 
 
+class _AsyncLRU:
+    """In-process async LRU cache with TTL. Thread-safe via asyncio.Lock."""
+
+    def __init__(self, maxsize: int = 128, ttl_seconds: int = 21_600):  # 6-hour default
+        self._store: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._maxsize = maxsize
+        self._ttl = ttl_seconds
+        self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _key(**kwargs) -> str:
+        return hashlib.md5(json.dumps(kwargs, sort_keys=True).encode()).hexdigest()
+
+    async def get(self, key: str) -> Any:
+        async with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            ts, value = entry
+            if _time.monotonic() - ts > self._ttl:
+                del self._store[key]
+                return None
+            self._store.move_to_end(key)
+            return value
+
+    async def set(self, key: str, value: Any) -> None:
+        async with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+            self._store[key] = (_time.monotonic(), value)
+            if len(self._store) > self._maxsize:
+                self._store.popitem(last=False)
+
+    def size(self) -> int:
+        return len(self._store)
+
+
 def _cache_fresh(fetched_at: str, max_age_days: int) -> bool:
     try:
         dt = datetime.fromisoformat(fetched_at)
@@ -41,6 +83,7 @@ class TMDBClient:
         self.api_key = api_key
         self.region = region
         self._client = httpx.AsyncClient(timeout=10.0)
+        self._discover_lru = _AsyncLRU(maxsize=128, ttl_seconds=21_600)  # 6-hour TTL
 
     def _params(self, **kwargs) -> dict:
         return {"api_key": self.api_key, **kwargs}
@@ -115,6 +158,20 @@ class TMDBClient:
         certification: Optional[str] = None,   # e.g. "R" | "NC-17" — restricts to that US cert
     ) -> list[dict]:
         """Discover movies via TMDB /discover/movie (always current data)."""
+        cache_key = _AsyncLRU._key(
+            g=sorted(genre_ids),
+            k=sorted(keyword_ids),
+            l=language_code,
+            p=page,
+            v=min_votes,
+            gte=date_gte,
+            lte=date_lte,
+            c=certification,
+        )
+        cached = await self._discover_lru.get(cache_key)
+        if cached is not None:
+            return cached
+
         params: dict = {
             "sort_by": "popularity.desc",
             "vote_count.gte": min_votes if certification is None else 1,
@@ -140,11 +197,13 @@ class TMDBClient:
             f"{TMDB_BASE}/discover/movie", params=self._params(**params)
         )
         r.raise_for_status()
-        return [
+        results = [
             self._format_discover(m)
             for m in r.json().get("results", [])
             if m.get("title")
         ]
+        await self._discover_lru.set(cache_key, results)
+        return results
 
     def _format_discover(self, m: dict) -> dict:
         gids = m.get("genre_ids", [])

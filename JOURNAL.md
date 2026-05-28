@@ -880,7 +880,11 @@ With Groq gone and ChromaDB back in the requirements, the `chroma_db/` directory
 
 ## 2026-05-28 — Day 3 (continued)
 
-### Feature 17 (Tier 1): SQLite persistent TMDB cache — movie meta + streaming providers
+
+
+### Feature 17: TMDB caching — three-tier latency optimization
+
+#### Tier 1: SQLite persistent TMDB cache — movie meta + streaming providers
 
 **Why**
 
@@ -937,5 +941,39 @@ def _cache_fresh(fetched_at: str, max_age_days: int) -> bool:
 - First request for a title: unchanged (still calls TMDB, writes cache).
 - Second request for same title (same session or different user): `meta_ms` → ~0ms, `streaming_ms` → ~0ms.
 - Total pipeline warm: ~1.5s → ~300–400ms (just discover + reranker).
+
+#### Tier 2: In-process async LRU cache for discover results
+
+Tier 1 handles `get_movie_meta` and `enrich_with_streaming` — the first and last steps. `discover_movies()` is the middle step and still hits TMDB on every call. Tier 2 adds an in-process LRU cache for discover results: same genre/keyword/language/era/cert combo within a 6-hour window costs zero network time.
+
+**Why SQLite won't work here**: Discover results change hourly (trending scores shift). Serialising 20-movie lists to SQLite on every recommend call adds write overhead without meaningful durability benefit. An in-process `OrderedDict` is faster and sufficient — the process typically runs for days between restarts.
+
+**`_AsyncLRU` class** (added to `tmdb_client.py`):
+
+```python
+class _AsyncLRU:
+    def __init__(self, maxsize=128, ttl_seconds=21_600):
+        self._store: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._lock = asyncio.Lock()   # coroutine-safe, not thread-safe (fine for asyncio)
+    
+    @staticmethod
+    def _key(**kwargs) -> str:
+        return hashlib.md5(json.dumps(kwargs, sort_keys=True).encode()).hexdigest()
+    
+    async def get(key) → value | None   # None on miss or expired
+    async def set(key, value)           # evicts LRU entry if maxsize exceeded
+```
+
+Cache key: MD5 of `{g: sorted_genre_ids, k: sorted_keyword_ids, l: language, p: page, v: min_votes, gte: date_gte, lte: date_lte, c: cert}`. Caller sorts lists before key generation so `[28, 18]` and `[18, 28]` produce the same key.
+
+`TMDBClient` gets `self._discover_lru = _AsyncLRU(maxsize=128, ttl_seconds=21_600)` in `__init__`. At the top of `discover_movies()`: compute key, check LRU. At the bottom: store result before returning.
+
+**TTL: 6 hours.** Popularity rankings shift meaningfully over a day, so 6 hours is a conservative freshness window. A server restart clears the cache regardless.
+
+**Eviction**: When `len(store) > maxsize`, the least-recently-used entry is popped. 128 entries at ~5 KB each = 640 KB peak memory — negligible.
+
+**Testing**: Verified basic get/set, miss-returns-None, TTL expiry (1s TTL, sleep 1.1s → evicted), LRU eviction (maxsize=3, access 'a', add 'd' → 'b' evicted, 'a' survives), and key stability (sorted input always produces same hash).
+
+**What this covers**: Within a session, the broad discover calls (2 pages × 2 languages = 4 calls) on the second recommendation request in the same server process return instantly. Different users requesting the same genre combos also share the cache — the first user warms it, subsequent users hit it.
 
 ---
