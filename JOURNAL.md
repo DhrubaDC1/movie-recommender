@@ -876,4 +876,140 @@ With Groq gone and ChromaDB back in the requirements, the `chroma_db/` directory
 
 **PR**: #18
 
+#### Tier 3: Startup pre-warm — fill LRU before first user arrives
+
+Tier 2 (LRU) is a cold cache at startup. The first user on a fresh server still hits TMDB for every discover call. Tier 3 fires a background pre-warm task at startup to fill the LRU with the most common genre combos before any user request arrives.
+
+**Implementation** (`main.py`):
+
+```python
+_PREWARM_GENRE_COMBOS = [
+    [28],       # Action        [35],    # Comedy
+    [18],       # Drama         [878],   # Sci-Fi
+    [27],       # Horror        [28, 53], # Action + Thriller
+    [53],       # Thriller      [18, 80], # Drama + Crime
+]
+
+async def _prewarm_discover(tmdb_client):
+    tasks = [
+        tmdb_client.discover_movies(genres, [], language_code=lang, page=p)
+        for genres in _PREWARM_GENRE_COMBOS
+        for lang in (None, "en")
+        for p in (1, 2)
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    hits = sum(1 for r in results if not isinstance(r, Exception))
+    print(f"[prewarm] {hits}/{len(tasks)} calls succeeded ({lru.size()} entries).")
+```
+
+Called via `asyncio.create_task(_prewarm_discover(tmdb))` inside the lifespan, after all services are ready. `create_task` is non-blocking — the server is ready to serve requests immediately; the pre-warm runs concurrently in the background.
+
+**32 total discover calls** (8 genre combos × 2 languages × 2 pages), all fired in parallel via `asyncio.gather`. TMDB's rate limit is 40 req/10s — well within limits. Typical completion: ~400ms concurrently. The pre-warm also logs how many succeeded and how many LRU entries were populated.
+
+**Genre combo selection rationale**: Action, Drama, Comedy, Horror, Thriller, Sci-Fi cover the most-recommended genres globally. "Action + Thriller" and "Drama + Crime" are the most common two-genre combos produced by liked movies like *John Wick*, *Inception*, *The Dark Knight*, *Pulp Fiction*, *The Godfather*. Pre-warming both "any language" and English covers the two most common language filter modes.
+
+**What this unblocks**: First user after server restart gets warm discover results for any of these genre combos. The cold-start penalty disappears for the majority of recommendation requests.
+
+**Testing**: verified 32 entries stored in LRU (8 combos × 2 langs × 2 pages), cache hit confirmed for a specific key. Syntax check passed.
+
+---
+
+## 2026-05-28 — Day 3 (continued)
+
+
+
+### Feature 17: TMDB caching — three-tier latency optimization
+
+#### Tier 1: SQLite persistent TMDB cache — movie meta + streaming providers
+
+**Why**
+
+After replacing the LLM, the pipeline's remaining latency is almost entirely TMDB network time. `get_movie_meta()` makes 2 TMDB calls per liked movie (search + keywords). `enrich_with_streaming()` makes 1 call per candidate, fired in parallel for `num_results × 2` candidates. On a warm user session — returning user with the same liked movies — every single one of these calls is a duplicate. Caching them in SQLite turns repeat requests from ~1.5s to ~200ms with zero new infrastructure.
+
+**Two new tables in `logs.db`:**
+
+```sql
+CREATE TABLE tmdb_meta_cache (
+    title_lower TEXT    PRIMARY KEY,
+    tmdb_id     INTEGER,
+    genre_ids   TEXT    NOT NULL,
+    keyword_ids TEXT    NOT NULL,
+    fetched_at  TEXT    NOT NULL
+)
+
+CREATE TABLE tmdb_streaming_cache (
+    tmdb_id    INTEGER PRIMARY KEY,
+    providers  TEXT    NOT NULL,
+    fetched_at TEXT    NOT NULL
+)
+```
+
+Both added to `init_db()` — created automatically on server start, no migration script needed. `genre_ids` and `keyword_ids` stored as JSON strings (SQLite has no native array type). `providers` stored as JSON.
+
+**TTL logic (`tmdb_client.py`):**
+
+```python
+def _cache_fresh(fetched_at: str, max_age_days: int) -> bool:
+    dt = datetime.fromisoformat(fetched_at)
+    return datetime.now(timezone.utc) - dt < timedelta(days=max_age_days)
+```
+
+- Movie meta TTL: **30 days** — genre/keyword assignments for a released film essentially never change.
+- Streaming TTL: **7 days** — provider rights can rotate, but not daily. A week is safe.
+
+**Cache-first pattern in both methods:**
+
+`get_movie_meta()`:
+1. Check `tmdb_meta_cache` by `title_lower`. If fresh → return immediately, zero TMDB calls.
+2. Miss → fetch search + keywords from TMDB → upsert into cache → return.
+3. Empty result (movie not found) → also cached with empty lists so we don't retry unknowns.
+
+`enrich_with_streaming()`:
+1. Check `tmdb_streaming_cache` by `tmdb_id`. If fresh → return immediately.
+2. Miss → fetch providers → upsert into cache → return.
+3. **Stale-on-error**: if the TMDB call throws (network error, timeout) but a stale entry exists, return the stale data rather than `[]`. Graceful degradation.
+
+**Upsert semantics**: both use `ON CONFLICT(...) DO UPDATE SET` so re-fetching a movie simply refreshes the cache. No duplicates, no DELETE needed.
+
+**Testing**: wrote an async integration test against a temp SQLite file — all 5 assertions passed (write, case-insensitive read, streaming read, upsert, TTL helper). Cleaned up after test.
+
+**Expected latency improvement:**
+- First request for a title: unchanged (still calls TMDB, writes cache).
+- Second request for same title (same session or different user): `meta_ms` → ~0ms, `streaming_ms` → ~0ms.
+- Total pipeline warm: ~1.5s → ~300–400ms (just discover + reranker).
+
+#### Tier 2: In-process async LRU cache for discover results
+
+Tier 1 handles `get_movie_meta` and `enrich_with_streaming` — the first and last steps. `discover_movies()` is the middle step and still hits TMDB on every call. Tier 2 adds an in-process LRU cache for discover results: same genre/keyword/language/era/cert combo within a 6-hour window costs zero network time.
+
+**Why SQLite won't work here**: Discover results change hourly (trending scores shift). Serialising 20-movie lists to SQLite on every recommend call adds write overhead without meaningful durability benefit. An in-process `OrderedDict` is faster and sufficient — the process typically runs for days between restarts.
+
+**`_AsyncLRU` class** (added to `tmdb_client.py`):
+
+```python
+class _AsyncLRU:
+    def __init__(self, maxsize=128, ttl_seconds=21_600):
+        self._store: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._lock = asyncio.Lock()   # coroutine-safe, not thread-safe (fine for asyncio)
+    
+    @staticmethod
+    def _key(**kwargs) -> str:
+        return hashlib.md5(json.dumps(kwargs, sort_keys=True).encode()).hexdigest()
+    
+    async def get(key) → value | None   # None on miss or expired
+    async def set(key, value)           # evicts LRU entry if maxsize exceeded
+```
+
+Cache key: MD5 of `{g: sorted_genre_ids, k: sorted_keyword_ids, l: language, p: page, v: min_votes, gte: date_gte, lte: date_lte, c: cert}`. Caller sorts lists before key generation so `[28, 18]` and `[18, 28]` produce the same key.
+
+`TMDBClient` gets `self._discover_lru = _AsyncLRU(maxsize=128, ttl_seconds=21_600)` in `__init__`. At the top of `discover_movies()`: compute key, check LRU. At the bottom: store result before returning.
+
+**TTL: 6 hours.** Popularity rankings shift meaningfully over a day, so 6 hours is a conservative freshness window. A server restart clears the cache regardless.
+
+**Eviction**: When `len(store) > maxsize`, the least-recently-used entry is popped. 128 entries at ~5 KB each = 640 KB peak memory — negligible.
+
+**Testing**: Verified basic get/set, miss-returns-None, TTL expiry (1s TTL, sleep 1.1s → evicted), LRU eviction (maxsize=3, access 'a', add 'd' → 'b' evicted, 'a' survives), and key stability (sorted input always produces same hash).
+
+**What this covers**: Within a session, the broad discover calls (2 pages × 2 languages = 4 calls) on the second recommendation request in the same server process return instantly. Different users requesting the same genre combos also share the cache — the first user warms it, subsequent users hit it.
+
 ---

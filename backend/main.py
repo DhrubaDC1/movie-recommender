@@ -37,6 +37,33 @@ _LANG_ISO: dict[str, str] = {
 }
 
 
+# Genre combos that cover the majority of common "liked movie" taste profiles
+_PREWARM_GENRE_COMBOS = [
+    [28],        # Action
+    [18],        # Drama
+    [35],        # Comedy
+    [27],        # Horror
+    [53],        # Thriller
+    [878],       # Science Fiction
+    [28, 53],    # Action + Thriller
+    [18, 80],    # Drama + Crime
+]
+
+
+async def _prewarm_discover(tmdb_client: "TMDBClient") -> None:
+    """Warm the discover LRU cache at startup — fires in the background, never blocks."""
+    tasks = [
+        tmdb_client.discover_movies(genres, [], language_code=lang, page=p)
+        for genres in _PREWARM_GENRE_COMBOS
+        for lang in (None, "en")
+        for p in (1, 2)
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    hits = sum(1 for r in results if not isinstance(r, Exception))
+    print(f"[prewarm] discover cache warmed: {hits}/{len(tasks)} calls succeeded "
+          f"({tmdb_client._discover_lru.size()} entries in LRU).")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global tmdb, reranker, algorithmic_ranker
@@ -60,6 +87,9 @@ async def lifespan(app: FastAPI):
 
     algorithmic_ranker = AlgorithmicRanker(embedder=embedder, vector_store=vector_store)
     print("All services ready.")
+
+    # Fire-and-forget: warm the discover LRU for the most common genre combos
+    asyncio.create_task(_prewarm_discover(tmdb))
     yield
 
 

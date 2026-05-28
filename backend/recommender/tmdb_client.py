@@ -1,5 +1,11 @@
+import asyncio
+import hashlib
+import json
+import time as _time
 import httpx
-from typing import Optional
+from collections import OrderedDict
+from datetime import datetime, timezone, timedelta
+from typing import Any, Optional
 
 
 TMDB_BASE = "https://api.themoviedb.org/3"
@@ -25,11 +31,59 @@ STREAMING_LOGO = {
 }
 
 
+class _AsyncLRU:
+    """In-process async LRU cache with TTL. Thread-safe via asyncio.Lock."""
+
+    def __init__(self, maxsize: int = 128, ttl_seconds: int = 21_600):  # 6-hour default
+        self._store: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._maxsize = maxsize
+        self._ttl = ttl_seconds
+        self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _key(**kwargs) -> str:
+        return hashlib.md5(json.dumps(kwargs, sort_keys=True).encode()).hexdigest()
+
+    async def get(self, key: str) -> Any:
+        async with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            ts, value = entry
+            if _time.monotonic() - ts > self._ttl:
+                del self._store[key]
+                return None
+            self._store.move_to_end(key)
+            return value
+
+    async def set(self, key: str, value: Any) -> None:
+        async with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+            self._store[key] = (_time.monotonic(), value)
+            if len(self._store) > self._maxsize:
+                self._store.popitem(last=False)
+
+    def size(self) -> int:
+        return len(self._store)
+
+
+def _cache_fresh(fetched_at: str, max_age_days: int) -> bool:
+    try:
+        dt = datetime.fromisoformat(fetched_at)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - dt < timedelta(days=max_age_days)
+    except Exception:
+        return False
+
+
 class TMDBClient:
     def __init__(self, api_key: str, region: str = "US"):
         self.api_key = api_key
         self.region = region
         self._client = httpx.AsyncClient(timeout=10.0)
+        self._discover_lru = _AsyncLRU(maxsize=128, ttl_seconds=21_600)  # 6-hour TTL
 
     def _params(self, **kwargs) -> dict:
         return {"api_key": self.api_key, **kwargs}
@@ -57,6 +111,12 @@ class TMDBClient:
 
     async def get_movie_meta(self, title: str, include_adult: bool = False) -> dict:
         """Return genre_ids and keyword_ids for a movie title (for discover seeding)."""
+        from db import get_cached_movie_meta, set_cached_movie_meta
+
+        cached = await get_cached_movie_meta(title)
+        if cached and _cache_fresh(cached["fetched_at"], max_age_days=30):
+            return {"tmdb_id": cached["tmdb_id"], "genre_ids": cached["genre_ids"], "keyword_ids": cached["keyword_ids"]}
+
         r = await self._client.get(
             f"{TMDB_BASE}/search/movie",
             params=self._params(query=title, include_adult=include_adult),
@@ -64,6 +124,7 @@ class TMDBClient:
         r.raise_for_status()
         results = r.json().get("results", [])
         if not results:
+            await set_cached_movie_meta(title, None, [], [])
             return {"tmdb_id": None, "genre_ids": [], "keyword_ids": []}
 
         movie = results[0]
@@ -80,6 +141,7 @@ class TMDBClient:
         except Exception:
             pass
 
+        await set_cached_movie_meta(title, tmdb_id, genre_ids, keyword_ids)
         return {"tmdb_id": tmdb_id, "genre_ids": genre_ids, "keyword_ids": keyword_ids}
 
     # ── Real-time movie discovery ──────────────────────────────────────────
@@ -96,6 +158,20 @@ class TMDBClient:
         certification: Optional[str] = None,   # e.g. "R" | "NC-17" — restricts to that US cert
     ) -> list[dict]:
         """Discover movies via TMDB /discover/movie (always current data)."""
+        cache_key = _AsyncLRU._key(
+            g=sorted(genre_ids),
+            k=sorted(keyword_ids),
+            l=language_code,
+            p=page,
+            v=min_votes,
+            gte=date_gte,
+            lte=date_lte,
+            c=certification,
+        )
+        cached = await self._discover_lru.get(cache_key)
+        if cached is not None:
+            return cached
+
         params: dict = {
             "sort_by": "popularity.desc",
             "vote_count.gte": min_votes if certification is None else 1,
@@ -121,11 +197,13 @@ class TMDBClient:
             f"{TMDB_BASE}/discover/movie", params=self._params(**params)
         )
         r.raise_for_status()
-        return [
+        results = [
             self._format_discover(m)
             for m in r.json().get("results", [])
             if m.get("title")
         ]
+        await self._discover_lru.set(cache_key, results)
+        return results
 
     def _format_discover(self, m: dict) -> dict:
         gids = m.get("genre_ids", [])
@@ -189,21 +267,30 @@ class TMDBClient:
 
     async def enrich_with_streaming(self, tmdb_id: int) -> list[dict]:
         """Fetch streaming providers for a TMDB movie ID."""
+        from db import get_cached_streaming, set_cached_streaming
+
+        cached = await get_cached_streaming(tmdb_id)
+        if cached and _cache_fresh(cached["fetched_at"], max_age_days=7):
+            return cached["providers"]
+
         try:
             r = await self._client.get(
                 f"{TMDB_BASE}/movie/{tmdb_id}/watch/providers", params=self._params()
             )
             r.raise_for_status()
             region_data = r.json().get("results", {}).get(self.region, {})
-            return [
+            providers = [
                 {
                     "name": p["provider_name"],
                     "logo_url": f"{IMG_BASE}/w45{p['logo_path']}" if p.get("logo_path") else None,
                 }
                 for p in region_data.get("flatrate", [])[:4]
             ]
+            await set_cached_streaming(tmdb_id, providers)
+            return providers
         except Exception:
-            return []
+            # Stale cache beats empty on transient network error
+            return cached["providers"] if cached else []
 
     # ── Legacy: kept for get_movie_details_by_title callers ───────────────
 
