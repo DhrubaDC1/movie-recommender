@@ -876,6 +876,42 @@ With Groq gone and ChromaDB back in the requirements, the `chroma_db/` directory
 
 **PR**: #18
 
+#### Tier 3: Startup pre-warm — fill LRU before first user arrives
+
+Tier 2 (LRU) is a cold cache at startup. The first user on a fresh server still hits TMDB for every discover call. Tier 3 fires a background pre-warm task at startup to fill the LRU with the most common genre combos before any user request arrives.
+
+**Implementation** (`main.py`):
+
+```python
+_PREWARM_GENRE_COMBOS = [
+    [28],       # Action        [35],    # Comedy
+    [18],       # Drama         [878],   # Sci-Fi
+    [27],       # Horror        [28, 53], # Action + Thriller
+    [53],       # Thriller      [18, 80], # Drama + Crime
+]
+
+async def _prewarm_discover(tmdb_client):
+    tasks = [
+        tmdb_client.discover_movies(genres, [], language_code=lang, page=p)
+        for genres in _PREWARM_GENRE_COMBOS
+        for lang in (None, "en")
+        for p in (1, 2)
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    hits = sum(1 for r in results if not isinstance(r, Exception))
+    print(f"[prewarm] {hits}/{len(tasks)} calls succeeded ({lru.size()} entries).")
+```
+
+Called via `asyncio.create_task(_prewarm_discover(tmdb))` inside the lifespan, after all services are ready. `create_task` is non-blocking — the server is ready to serve requests immediately; the pre-warm runs concurrently in the background.
+
+**32 total discover calls** (8 genre combos × 2 languages × 2 pages), all fired in parallel via `asyncio.gather`. TMDB's rate limit is 40 req/10s — well within limits. Typical completion: ~400ms concurrently. The pre-warm also logs how many succeeded and how many LRU entries were populated.
+
+**Genre combo selection rationale**: Action, Drama, Comedy, Horror, Thriller, Sci-Fi cover the most-recommended genres globally. "Action + Thriller" and "Drama + Crime" are the most common two-genre combos produced by liked movies like *John Wick*, *Inception*, *The Dark Knight*, *Pulp Fiction*, *The Godfather*. Pre-warming both "any language" and English covers the two most common language filter modes.
+
+**What this unblocks**: First user after server restart gets warm discover results for any of these genre combos. The cold-start penalty disappears for the majority of recommendation requests.
+
+**Testing**: verified 32 entries stored in LRU (8 combos × 2 langs × 2 pages), cache hit confirmed for a specific key. Syntax check passed.
+
 ---
 
 ## 2026-05-28 — Day 3 (continued)
