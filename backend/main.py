@@ -2,7 +2,6 @@ import asyncio
 import time
 from collections import Counter
 from contextlib import asynccontextmanager
-from difflib import get_close_matches
 from typing import Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
@@ -15,7 +14,7 @@ load_dotenv(".env.local")
 
 from recommender.tmdb_client import TMDBClient
 from recommender.reranker import Reranker
-from recommender.llm_engine import LLMEngine
+from recommender.algorithmic_ranker import AlgorithmicRanker
 from db import (
     init_db,
     insert_user_events,
@@ -28,7 +27,7 @@ from auth import get_current_user, get_optional_user, router as auth_router
 
 tmdb: TMDBClient
 reranker: Reranker
-llm_engine: LLMEngine
+algorithmic_ranker: AlgorithmicRanker
 
 # Map UI language names → TMDB ISO 639-1 codes
 _LANG_ISO: dict[str, str] = {
@@ -40,13 +39,26 @@ _LANG_ISO: dict[str, str] = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global tmdb, reranker, llm_engine
+    global tmdb, reranker, algorithmic_ranker
     print("Initialising database...")
     await init_db()
     print("Loading services...")
     tmdb = TMDBClient(api_key=os.environ["TMDB_API_KEY"], region=os.getenv("TMDB_REGION", "US"))
     reranker = Reranker()
-    llm_engine = LLMEngine(api_key=os.environ["GROQ_API_KEY"])
+
+    # ChromaDB + embedder are optional — gracefully degrade if packages not installed
+    embedder = None
+    vector_store = None
+    try:
+        from recommender.embedder import Embedder
+        from recommender.vector_store import VectorStore
+        embedder = Embedder()
+        vector_store = VectorStore()
+        print("ChromaDB vector signal: enabled.")
+    except Exception as e:
+        print(f"ChromaDB vector signal: disabled ({e}).")
+
+    algorithmic_ranker = AlgorithmicRanker(embedder=embedder, vector_store=vector_store)
     print("All services ready.")
     yield
 
@@ -358,55 +370,20 @@ async def recommend(
     for c in top_candidates:
         c.setdefault("imdb_rating", c.get("vote_average"))
 
-    # ── Step 7: LLM comparative + CoT ranking ──────────────────────────────
+    # ── Step 7: Algorithmic ranking ─────────────────────────────────────────
     t0 = time.monotonic()
-    ranked = await llm_engine.rank_and_explain(
+    ranked = algorithmic_ranker.rank(
+        candidates=top_candidates,
         liked=all_liked,
         disliked=all_disliked,
-        candidates=top_candidates,
+        liked_genre_ids=top_genre_ids,
         num_results=req.num_results,
-        languages=req.languages or None,
-        era=req.era or None,
     )
-    llm_ms = int((time.monotonic() - t0) * 1000)
+    rank_ms = int((time.monotonic() - t0) * 1000)
 
     if not ranked:
-        print(f"[recommend] LLM returned 0 results for liked={all_liked} candidates={len(top_candidates)}")
-        raise HTTPException(status_code=500, detail="The AI couldn't rank films right now — please try again.")
-
-    # Attach full TMDB metadata to each ranked result.
-    # LLM sometimes rephrases titles ("Se7en" → "Seven"), so we look up by
-    # candidate_index first (exact array position), then fall back to fuzzy
-    # title matching so the poster is always found if the movie is in our list.
-    candidate_titles = [c["title"] for c in top_candidates]
-    for rec in ranked:
-        match: dict = {}
-
-        # 1. Index-based lookup (LLM returns the number shown in the prompt)
-        idx = rec.get("candidate_index")
-        if isinstance(idx, int) and 1 <= idx <= len(top_candidates):
-            match = top_candidates[idx - 1]
-
-        # 2. Exact title match
-        if not match:
-            match = next(
-                (c for c in top_candidates if c["title"].lower() == rec["title"].lower()),
-                {},
-            )
-
-        # 3. Fuzzy title match (cutoff 0.6 avoids false positives)
-        if not match:
-            close = get_close_matches(rec["title"], candidate_titles, n=1, cutoff=0.6)
-            if close:
-                match = next(c for c in top_candidates if c["title"] == close[0])
-
-        rec["poster_url"] = match.get("poster_url")
-        rec["backdrop_url"] = match.get("backdrop_url")
-        rec["streaming"] = match.get("streaming", [])
-        rec["year"] = match.get("year", rec.get("year"))
-        rec["genre"] = match.get("genre", rec.get("genre", ""))
-        rec["imdb_rating"] = match.get("vote_average", rec.get("imdb_rating"))
-        rec["original_language"] = match.get("original_language", "")
+        print(f"[recommend] ranker returned 0 results for liked={all_liked} candidates={len(top_candidates)}")
+        raise HTTPException(status_code=500, detail="Couldn't rank films right now — please try again.")
 
     total_ms = int((time.monotonic() - t_total) * 1000)
 
@@ -429,7 +406,7 @@ async def recommend(
                 "discover_ms": discover_ms,
                 "rerank_ms": rerank_ms,
                 "streaming_ms": tmdb_ms,
-                "llm_ms": llm_ms,
+                "rank_ms": rank_ms,
                 "total_ms": total_ms,
             },
         },

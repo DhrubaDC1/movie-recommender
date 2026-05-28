@@ -11,5 +11,6 @@ bcrypt==4.2.1
 # Logging / DB
 aiosqlite==0.20.0
 
-# LLM
-groq==0.13.1
+# Vector similarity (optional — gracefully disabled if packages absent)
+chromadb==0.6.3
+sentence-transformers==3.4.1
