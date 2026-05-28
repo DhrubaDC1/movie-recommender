@@ -811,3 +811,69 @@ A new "Adult Content" section was appended to the settings drawer, below the the
 **PR**: #17
 
 ---
+
+## 2026-05-28 — Day 3
+
+### Feature 16: No-LLM Recommender — Algorithmic Ranking Replaces Groq
+
+**Why**
+
+The Groq dependency added 2–4 seconds of latency per recommendation request, burned API credits, and introduced a hard external failure mode (rate limits, JSON parse failures, model timeouts). The goal: replace the LLM entirely with a deterministic, multi-signal scoring function. Same pipeline, same API, same frontend — zero Groq.
+
+**What changed**
+
+Three files touched:
+
+1. **`backend/recommender/algorithmic_ranker.py` (new)** — `AlgorithmicRanker` class with a single `rank()` method that takes the same inputs the LLM received and returns the same output schema (title, explanation, poster_url, streaming, etc.). The frontend sees zero difference.
+
+2. **`backend/main.py`** — Step 7 swapped from `await llm_engine.rank_and_explain(...)` to `algorithmic_ranker.rank(...)`. Removed the 40-line candidate_index lookup block that was only necessary because the LLM sometimes rephrased titles. Removed the `LLMEngine` import. `get_close_matches` import dropped (unused now). Telemetry field `llm_ms` renamed to `rank_ms`.
+
+3. **`backend/requirements.txt`** — Dropped `groq==0.13.1`. Added `chromadb==0.6.3` + `sentence-transformers==3.4.1` for when Docker rebuilds.
+
+**The algorithm**
+
+Three scoring signals, weighted and summed:
+
+| Signal | Weight (no ChromaDB) | Weight (with ChromaDB) |
+|--------|---------------------|----------------------|
+| Genre Jaccard | 40% | 35% |
+| Quality score (reranker) | 60% | 45% |
+| ChromaDB vector similarity | 0% | 20% |
+
+**Genre Jaccard**: `|candidate_genres ∩ liked_genres| / |candidate_genres ∪ liked_genres|`. `liked_genres` is `top_genre_ids` already computed in Step 1 — no extra API calls. Candidate `genre_ids` come from TMDB discover — also already there.
+
+**Quality score**: directly from `reranker.rerank_tmdb()` output (vote_average 50% + vote_count 30% + popularity 20%). Computed in Step 5 before the ranker runs — zero extra work.
+
+**ChromaDB vector similarity**: For each liked movie title, embed with E5-small, query the IMDB-Top-1000 collection (n=50), build a `{normalized_title: max_sim}` map. Candidate titles are looked up with exact then fuzzy matching (cutoff 0.75). If a candidate appears in the IMDB Top 1000 and is semantically close to a liked movie, it gets a boost. Candidates not in the DB score 0.0 — neutral, not penalized.
+
+**Dislike penalty**: Same vector lookup against disliked movie titles. Max similarity × 0.3 subtracted from the final score. This is a soft penalty matching what the LLM was instructed to do.
+
+**ChromaDB graceful degradation**: The lifespan handler wraps `Embedder()` + `VectorStore()` in a try/except. If the packages aren't installed (current Docker image doesn't have them yet), the ranker initialises with `embedder=None, vector_store=None` and auto-shifts to the 40/60 genre/quality weights. Log message tells you which mode is active at startup.
+
+**Template-based explanations**
+
+Four templates, picked by strongest signal:
+
+```
+genre_score ≥ 0.4 and shared genres → "Shares Action and Drama with your picks. Rated 8.2/10 across 12,450 votes."
+vector_score ≥ 0.55              → "Tonally close to Inception. A Thriller film rated 7.9/10."
+quality_score ≥ 0.65             → "Highly acclaimed Drama (8.4/10, 50,200 votes). Aligns with the taste profile from The Dark Knight."
+fallback                         → "Matches your era and language preferences. Rated 7.5/10 across 8,900 votes."
+```
+
+Not beautiful prose — but honest, fast, and deterministic.
+
+**Trade-offs**
+
+- **Latency**: Step 7 drops from 2–4s to <1ms (sync, in-process). End-to-end from ~5s to ~1.5s.
+- **Ranking quality**: Genre + quality scoring is good for mainstream taste alignment. Edges off on niche taste signals (dark comedy, slow cinema, specific directorial styles) that the LLM could pick up from liked movie names. Net acceptable for the use case.
+- **Explanations**: Templated vs natural language. Predictable, not lyrical.
+- **Cost**: Zero. No rate limits, no retry logic, no JSON parse failures.
+
+**What this unblocks**
+
+With Groq gone and ChromaDB back in the requirements, the `chroma_db/` directory (IMDB Top 1000, 7.9 MB) that ships with the repo becomes an active ranking signal once Docker rebuilds. The old `setup_vectordb.py` script is still there — running it against a larger dataset (TMDB's full popular-movies CSV) would meaningfully improve the vector signal coverage.
+
+**PR**: #18
+
+---
